@@ -1,18 +1,123 @@
-const OWNER_IDS=['8713197897'];
-const seed=[{id:1,name:'Silk No. 01',price:189000,color:'Ivory',stock:5,img:'https://images.unsplash.com/photo-1605763240000-7e93b172d754?auto=format&fit=crop&w=700&q=80'},{id:2,name:'Soft No. 02',price:159000,color:'Black',stock:7,img:'https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=700&q=80'}];
-let products=JSON.parse(localStorage.getItem('zafayha_products')||'null')||seed, cart=JSON.parse(localStorage.getItem('zafayha_cart')||'[]');
-const app=document.querySelector('#app'); const tg=window.Telegram?.WebApp; const user=tg?.initDataUnsafe?.user; const isOwner=!!user&&OWNER_IDS.includes(String(user.id));
-const money=n=>new Intl.NumberFormat('ru-RU').format(n)+' сум';
-function save(){localStorage.setItem('zafayha_products',JSON.stringify(products));localStorage.setItem('zafayha_cart',JSON.stringify(cart));document.querySelector('#count').textContent=cart.length}
-function hero(t,s='ZAFAYHA'){return `<section class=hero><div class=eyebrow>${s}</div><h1>${t}</h1></section>`}
-function shop(){app.innerHTML=hero('Тихая элегантность.')+`<div class=grid>${products.map(p=>`<article class=card><img src='${p.img}'><h3>${p.name}</h3><div class=meta>${p.color||''}${p.stock!=null?` · ${p.stock} шт.`:''}</div><div class=row><span class=price>${money(p.price)}</span></div><button class=btn onclick='add(${p.id})'>В корзину</button></article>`).join('')}</div>${isOwner?`<button class='adminLink' onclick='admin()'>Админ ZAFAYHA</button>`:''}`}
-window.add=id=>{cart.push(id);save();};
-function tryon(){app.innerHTML=hero('Примерьте образ.','AI примерка')+`<section class=panel><p>Загрузите своё фото и выберите платок.</p><input type=file accept='image/*'><select class=field>${products.map(p=>`<option>${p.name}</option>`)}</select><button class=btn onclick="alert('AI-модуль будет подключён к серверной версии')">Примерить</button><p class=muted>Фото будет использоваться только для создания примерки.</p></section>`}
-function gift(){app.innerHTML=hero('Передайте тепло.','Подарить платок')+`<section class=panel><div class=notice>Передача анонимная: контактные данные сторон не показываются друг другу.</div><input class=field placeholder='Описание платка'><input type=file accept='image/*'><select class=field><option>Новый</option><option>Надевали 1 раз</option><option>Надевали 2 раза</option></select><input class=field placeholder='Ваш номер телефона'><button class=btn>Отдать в подарок</button></section>`}
-function cartView(){let rows=cart.map(id=>products.find(p=>p.id===id)).filter(Boolean),total=rows.reduce((a,p)=>a+p.price,0);app.innerHTML=hero('Ваш заказ.','Корзина')+`<section class=panel>${rows.length?rows.map(p=>`<div class=row><p>${p.name}</p><b>${money(p.price)}</b></div>`).join(''):'<p>Корзина пока пуста.</p>'}${rows.length?`<hr><div class=row><h3>Итого</h3><h3>${money(total)}</h3></div><input class=field placeholder='Имя'><input class=field placeholder='Телефон'><textarea class=field placeholder='Адрес доставки'></textarea><p class=muted>Доставка оплачивается покупателем отдельно.</p><button class=btn>Оформить заказ</button>`:''}</section>`}
-window.admin=()=>{if(!isOwner){alert('Доступ только для владельцев ZAFAYHA');return;} app.innerHTML=hero('Управление.','Owner · ZAFAYHA')+`<section class=panel><div class=ownerBadge>Owner · Telegram ID ${user.id}</div><h2>Добавить товар</h2><input id=n class=field placeholder='Название'><input id=p class=field type=number placeholder='Цена, сум'><input id=c class=field placeholder='Цвет'><input id=s class=field type=number placeholder='Количество'><input id=i class=field placeholder='Ссылка на фото'><button class=btn onclick='newProduct()'>Опубликовать товар</button><hr><h2>Товары</h2>${products.map(x=>`<div class=productAdmin><div><b>${x.name}</b><br><small>${x.color||'Без цвета'} · ${money(x.price)} · ${x.stock??0} шт.</small></div><div class=adminActions><button onclick='editProduct(${x.id})'>Изменить</button><button onclick='del(${x.id})'>Удалить</button></div></div>`).join('')}</section>`};
-window.newProduct=()=>{if(!isOwner)return; if(!n.value||!p.value)return alert('Укажите название и цену');products.push({id:Date.now(),name:n.value.trim(),price:+p.value,color:c.value.trim(),stock:+s.value||0,img:i.value.trim()||'https://placehold.co/600x700?text=ZAFAYHA'});save();admin()};
-window.editProduct=id=>{if(!isOwner)return;const x=products.find(p=>p.id===id);const name=prompt('Название',x.name);if(name===null)return;const price=prompt('Цена',x.price);if(price===null)return;const color=prompt('Цвет',x.color||'');if(color===null)return;const stock=prompt('Количество',x.stock??0);if(stock===null)return;Object.assign(x,{name:name.trim(),price:+price||x.price,color:color.trim(),stock:+stock||0});save();admin()};
-window.del=id=>{if(!isOwner)return;if(confirm('Удалить этот товар?')){products=products.filter(x=>x.id!==id);save();admin()}};
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>({shop,try:tryon,gift,cart:cartView}[b.dataset.tab]()));
-if(tg){tg.ready();tg.expand();} save();shop();
+const OWNER_IDS = ['8713197897'];
+
+const SUPABASE_URL = 'https://ackordxxqeccjlifzgop.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
+
+let products = [];
+let cart = [];
+
+const app = document.querySelector('#app');
+const tg = window.Telegram?.WebApp;
+const user = tg?.initDataUnsafe?.user;
+
+const money = n =>
+  new Intl.NumberFormat('ru-RU').format(Number(n)) + ' сум';
+
+async function loadProducts() {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?active=eq.true&select=*&order=created_at.desc`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Supabase: ${response.status}`);
+    }
+
+    products = await response.json();
+    shop();
+  } catch (error) {
+    console.error(error);
+    app.innerHTML = `
+      <section class="panel">
+        <h2>Не удалось загрузить товары</h2>
+        <p>Проверьте подключение к базе данных.</p>
+      </section>
+    `;
+  }
+}
+
+function hero(title) {
+  return `
+    <section class="hero">
+      <div class="eyebrow">ZAFAYHA</div>
+      <h1>${title}</h1>
+    </section>
+  `;
+}
+
+function shop() {
+  app.innerHTML =
+    hero('Тихая элегантность.') +
+    `<div class="grid">
+      ${products.map(p => `
+        <article class="card">
+          ${p.image_url ? `<img src="${p.image_url}" alt="${p.name}">` : ''}
+          <h3>${p.name}</h3>
+          <p>${p.color || ''}</p>
+          <p>${p.stock} шт.</p>
+          <strong>${money(p.price)}</strong>
+          <button onclick="addToCart('${p.id}')">В корзину</button>
+        </article>
+      `).join('')}
+    </div>`;
+}
+
+window.addToCart = id => {
+  cart.push(id);
+  cartView();
+};
+
+function cartView() {
+  const rows = cart
+    .map(id => products.find(p => p.id === id))
+    .filter(Boolean);
+
+  const total = rows.reduce((sum, p) => sum + Number(p.price), 0);
+
+  app.innerHTML =
+    hero('Корзина') +
+    `<section class="panel">
+      ${rows.length
+        ? rows.map(p => `<p>${p.name} — ${money(p.price)}</p>`).join('')
+        : '<p>Корзина пуста</p>'
+      }
+      ${rows.length ? `<h3>Итого: ${money(total)}</h3>` : ''}
+    </section>`;
+}
+
+function tryon() {
+  app.innerHTML =
+    hero('Примерьте образ.') +
+    `<section class="panel">
+      <p>AI примерка</p>
+    </section>`;
+}
+
+function gift() {
+  app.innerHTML =
+    hero('Передайте тепло.') +
+    `<section class="panel">
+      <p>Подарить платок</p>
+    </section>`;
+}
+
+document.querySelectorAll('nav button').forEach(button => {
+  button.onclick = () => {
+    const action = button.dataset.action;
+
+    if (action === 'shop') shop();
+    if (action === 'tryon') tryon();
+    if (action === 'gift') gift();
+    if (action === 'cart') cartView();
+  };
+});
+
+if (tg) tg.ready();
+
+loadProducts();
