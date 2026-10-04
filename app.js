@@ -5,6 +5,7 @@ const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
 
 let products = [];
 let cart = JSON.parse(localStorage.getItem('zafayha_cart') || '[]');
+let orderSending = false;
 
 const app = document.querySelector('#app');
 const tg = window.Telegram?.WebApp;
@@ -70,8 +71,6 @@ function showNotice(message) {
     alert(message);
   }
 }
-
-/* Активная кнопка нижнего меню */
 
 function setActiveNav(action) {
   document.querySelectorAll('nav button').forEach(button => {
@@ -421,6 +420,10 @@ function cartView() {
   updateCartBadge();
 }
 
+/* =========================
+   CHECKOUT
+========================= */
+
 window.checkout = function() {
   if (!cart.length) return;
 
@@ -464,6 +467,7 @@ window.checkout = function() {
         ></textarea>
 
         <button
+          id="sendOrderButton"
           class="primary-button"
           onclick="sendOrder()"
         >
@@ -478,7 +482,13 @@ window.checkout = function() {
     `;
 };
 
-window.sendOrder = function() {
+/* =========================
+   SEND ORDER TO TELEGRAM
+========================= */
+
+window.sendOrder = async function() {
+  if (orderSending) return;
+
   const name =
     document.querySelector('#customerName')?.value.trim();
 
@@ -487,6 +497,9 @@ window.sendOrder = function() {
 
   const address =
     document.querySelector('#customerAddress')?.value.trim();
+
+  const comment =
+    document.querySelector('#customerComment')?.value.trim() || '';
 
   if (!name || !phone) {
     showNotice('Введите имя и номер телефона.');
@@ -498,9 +511,131 @@ window.sendOrder = function() {
     return;
   }
 
-  showNotice(
-    'Данные заполнены. Следующим этапом подключим отправку заказа администратору ZAFAYHA.'
+  const orderItems = cart
+    .map(item => {
+      const product = getProduct(item.id);
+
+      if (!product) return null;
+
+      return {
+        id: product.id,
+        name: product.name || 'ZAFAYHA',
+        color: product.color || '',
+        price: Number(product.price || 0),
+        quantity: Number(item.quantity || 0)
+      };
+    })
+    .filter(Boolean);
+
+  if (!orderItems.length) {
+    showNotice('Корзина пуста.');
+    return;
+  }
+
+  const total = orderItems.reduce(
+    (sum, item) =>
+      sum + item.price * item.quantity,
+    0
   );
+
+  const button =
+    document.querySelector('#sendOrderButton');
+
+  orderSending = true;
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Отправляем заказ...';
+  }
+
+  try {
+    const response = await fetch('/api/send-order', {
+      method: 'POST',
+
+      headers: {
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify({
+        name,
+        phone,
+        address,
+        comment,
+        items: orderItems,
+        total,
+
+        telegramUser: user
+          ? {
+              id: user.id,
+              first_name: user.first_name || '',
+              last_name: user.last_name || '',
+              username: user.username || ''
+            }
+          : null
+      })
+    });
+
+    let result = null;
+
+    try {
+      result = await response.json();
+    } catch (jsonError) {
+      console.error('JSON error:', jsonError);
+    }
+
+    if (!response.ok || !result?.ok) {
+      throw new Error(
+        result?.error || `Ошибка отправки: ${response.status}`
+      );
+    }
+
+    cart = [];
+    saveCart();
+
+    app.innerHTML =
+      hero(
+        'Спасибо за заказ.',
+        'Мы получили вашу заявку.'
+      ) +
+      `
+        <section class="panel">
+
+          <h2>Заказ успешно отправлен</h2>
+
+          <p>
+            Спасибо, ${name}! Команда ZAFAYHA свяжется с вами
+            по указанному номеру телефона.
+          </p>
+
+          <button
+            class="primary-button"
+            onclick="shop()"
+          >
+            Вернуться в магазин
+          </button>
+
+        </section>
+      `;
+
+    setActiveNav('shop');
+
+    showNotice('Заказ успешно отправлен в ZAFAYHA.');
+
+  } catch (error) {
+    console.error('Send order error:', error);
+
+    showNotice(
+      'Не удалось отправить заказ. Попробуйте ещё раз.'
+    );
+
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Подтвердить заказ';
+    }
+
+  } finally {
+    orderSending = false;
+  }
 };
 
 /* =========================
@@ -686,8 +821,6 @@ function admin() {
     shop();
     return;
   }
-
-  /* В админке нижнее меню не выделяем */
 
   setActiveNav(null);
 
@@ -1027,8 +1160,6 @@ window.cartView = cartView;
 window.tryon = tryon;
 window.gift = gift;
 
-/* Переключение нижнего меню */
-
 document.querySelectorAll('nav button').forEach(button => {
   button.onclick = () => {
     const action = button.dataset.action;
@@ -1059,8 +1190,6 @@ if (tg) {
   tg.ready();
   tg.expand();
 }
-
-/* При первом запуске активен Магазин */
 
 setActiveNav('shop');
 
