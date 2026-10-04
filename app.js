@@ -65,7 +65,7 @@ function shop() {
           <button onclick="addToCart('${p.id}')">В корзину</button>
         </article>
       `).join('')}
-    </div>`;
+    </div>${isOwner ? '<button class="adminlink" onclick="admin()">Админ ZAFAYHA</button>' : ''}`;
 }
 
 window.addToCart = id => {
