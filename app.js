@@ -1,4 +1,4 @@
-const OWNER_IDS = ['8713197897'];
+const OWNER_IDS = ['8713197897', '8886448593'];
 
 const SUPABASE_URL = 'https://ackordxxqeccjlifzgop.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
