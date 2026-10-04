@@ -71,6 +71,17 @@ function showNotice(message) {
   }
 }
 
+/* Активная кнопка нижнего меню */
+
+function setActiveNav(action) {
+  document.querySelectorAll('nav button').forEach(button => {
+    button.classList.toggle(
+      'active',
+      button.dataset.action === action
+    );
+  });
+}
+
 /* =========================
    PRODUCTS
 ========================= */
@@ -121,6 +132,8 @@ async function loadProducts() {
 ========================= */
 
 function shop() {
+  setActiveNav('shop');
+
   const cards = products.length
     ? products.map(p => `
         <article class="card">
@@ -135,11 +148,7 @@ function shop() {
                   >
                 </div>
               `
-              : `
-                <div class="product-image product-placeholder">
-                  <span>ZAFAYHA</span>
-                </div>
-              `
+              : ''
           }
 
           <div class="card-content">
@@ -282,6 +291,8 @@ window.removeFromCart = function(id) {
 };
 
 function cartView() {
+  setActiveNav('cart');
+
   const rows = cart
     .map(item => ({
       ...item,
@@ -369,6 +380,7 @@ function cartView() {
             : `
                 <div class="empty-state">
                   <h2>Корзина пуста</h2>
+
                   <p>
                     Добавьте понравившиеся изделия из коллекции.
                   </p>
@@ -412,6 +424,8 @@ function cartView() {
 window.checkout = function() {
   if (!cart.length) return;
 
+  setActiveNav('cart');
+
   app.innerHTML =
     hero(
       'Оформление заказа.',
@@ -421,12 +435,14 @@ window.checkout = function() {
       <section class="panel checkout-panel">
 
         <label>Ваше имя</label>
+
         <input
           id="customerName"
           placeholder="Имя"
         >
 
         <label>Телефон</label>
+
         <input
           id="customerPhone"
           type="tel"
@@ -434,12 +450,14 @@ window.checkout = function() {
         >
 
         <label>Адрес доставки</label>
+
         <input
           id="customerAddress"
           placeholder="Город, улица, дом"
         >
 
         <label>Комментарий</label>
+
         <textarea
           id="customerComment"
           placeholder="Комментарий к заказу"
@@ -490,6 +508,8 @@ window.sendOrder = function() {
 ========================= */
 
 function tryon() {
+  setActiveNav('tryon');
+
   app.innerHTML =
     hero(
       'Примерьте ZAFAYHA.',
@@ -566,6 +586,8 @@ window.previewTryonPhoto = function(event) {
 ========================= */
 
 function gift() {
+  setActiveNav('gift');
+
   const options = products
     .filter(p => Number(p.stock || 0) > 0)
     .map(p => `
@@ -664,6 +686,10 @@ function admin() {
     shop();
     return;
   }
+
+  /* В админке нижнее меню не выделяем */
+
+  setActiveNav(null);
 
   app.innerHTML =
     hero(
@@ -813,6 +839,7 @@ window.createProduct = async function() {
 
   } catch (error) {
     console.error(error);
+
     showNotice('Не удалось добавить товар.');
   }
 };
@@ -823,6 +850,8 @@ window.editProduct = function(id) {
   const product = getProduct(id);
 
   if (!product) return;
+
+  setActiveNav(null);
 
   app.innerHTML =
     hero('Изменить товар') +
@@ -925,6 +954,7 @@ window.saveProduct = async function(id) {
 
   } catch (error) {
     console.error(error);
+
     showNotice('Не удалось изменить товар.');
   }
 };
@@ -960,6 +990,7 @@ window.deleteProduct = async function(id) {
 
   } catch (error) {
     console.error(error);
+
     showNotice('Не удалось удалить товар.');
   }
 };
@@ -981,6 +1012,7 @@ async function refreshAdmin() {
 
   } catch (error) {
     console.error(error);
+
     showNotice('Не удалось обновить список товаров.');
   }
 }
@@ -995,21 +1027,42 @@ window.cartView = cartView;
 window.tryon = tryon;
 window.gift = gift;
 
+/* Переключение нижнего меню */
+
 document.querySelectorAll('nav button').forEach(button => {
   button.onclick = () => {
     const action = button.dataset.action;
 
-    if (action === 'shop') shop();
-    if (action === 'tryon') tryon();
-    if (action === 'gift') gift();
-    if (action === 'cart') cartView();
+    if (action === 'shop') {
+      shop();
+    }
+
+    if (action === 'tryon') {
+      tryon();
+    }
+
+    if (action === 'gift') {
+      gift();
+    }
+
+    if (action === 'cart') {
+      cartView();
+    }
   };
 });
+
+/* =========================
+   TELEGRAM
+========================= */
 
 if (tg) {
   tg.ready();
   tg.expand();
 }
+
+/* При первом запуске активен Магазин */
+
+setActiveNav('shop');
 
 updateCartBadge();
 loadProducts();
