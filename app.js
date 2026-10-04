@@ -14,8 +14,13 @@ const isOwner = Boolean(
   user && OWNER_IDS.includes(String(user.id))
 );
 
-const money = value => {
-  return new Intl.NumberFormat('ru-RU').format(Number(value || 0)) + ' сум';
+const money = value =>
+  new Intl.NumberFormat('ru-RU').format(Number(value || 0)) + ' сум';
+
+const headers = {
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json'
 };
 
 function hero(title) {
@@ -36,46 +41,27 @@ async function loadProducts() {
   `;
 
   try {
-    const url =
-      `${SUPABASE_URL}/rest/v1/products` +
-      `?select=*` +
-      `&active=eq.true` +
-      `&order=created_at.desc`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        Accept: 'application/json'
-      }
-    });
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?active=eq.true&select=*&order=created_at.desc`,
+      { headers }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Supabase error:', response.status, errorText);
-
-      throw new Error(`Ошибка Supabase ${response.status}`);
+      throw new Error(`Ошибка загрузки: ${response.status}`);
     }
 
-    const data = await response.json();
-
-    if (!Array.isArray(data)) {
-      throw new Error('Supabase вернул неправильный формат данных');
-    }
-
-    products = data;
+    products = await response.json();
     shop();
 
   } catch (error) {
-    console.error('ZAFAYHA loadProducts:', error);
+    console.error(error);
 
     app.innerHTML = `
-      ${hero('Тихая элегантность.')}
+      ${hero('ZAFAYHA')}
       <section class="panel">
         <h2>Не удалось загрузить товары</h2>
-        <p>${error.message}</p>
-        <button onclick="loadProducts()">Попробовать снова</button>
+        <p>Попробуйте открыть магазин ещё раз.</p>
+        <button onclick="loadProducts()">Повторить</button>
       </section>
     `;
   }
@@ -83,122 +69,75 @@ async function loadProducts() {
 
 function shop() {
   const cards = products.length
-    ? products.map(product => `
+    ? products.map(p => `
         <article class="card">
 
-          ${
-            product.image_url
-              ? `<img
-                   src="${product.image_url}"
-                   alt="${product.name || 'ZAFAYHA'}"
-                   loading="lazy"
-                 >`
-              : ''
+          ${p.image_url
+            ? `<img src="${p.image_url}" alt="${p.name || 'ZAFAYHA'}">`
+            : ''
           }
 
-          <h3>${product.name || 'ZAFAYHA'}</h3>
+          <h3>${p.name || 'ZAFAYHA'}</h3>
 
-          ${
-            product.color
-              ? `<p>${product.color}</p>`
-              : ''
+          ${p.color
+            ? `<p>${p.color}</p>`
+            : ''
           }
 
-          <p>${Number(product.stock || 0)} шт.</p>
+          <p>${Number(p.stock || 0)} шт.</p>
 
-          <strong>${money(product.price)}</strong>
+          <strong>${money(p.price)}</strong>
 
-          <button
-            onclick="addToCart('${product.id}')"
-            ${Number(product.stock || 0) <= 0 ? 'disabled' : ''}
-          >
-            ${
-              Number(product.stock || 0) > 0
-                ? 'В корзину'
-                : 'Нет в наличии'
-            }
+          <button onclick="addToCart('${p.id}')">
+            В корзину
           </button>
 
         </article>
       `).join('')
     : `
-        <section class="panel">
-          <p>Сейчас в коллекции нет товаров.</p>
-        </section>
-      `;
+      <section class="panel">
+        <p>Коллекция скоро появится.</p>
+      </section>
+    `;
 
-  app.innerHTML = `
-    ${hero('Тихая элегантность.')}
-
-    <div class="grid">
-      ${cards}
-    </div>
-
-    ${
-      isOwner
-        ? `<button class="adminlink" onclick="admin()">
-             Админ ZAFAYHA
-           </button>`
-        : ''
-    }
-  `;
+  app.innerHTML =
+    hero('Тихая элегантность.') +
+    `<div class="grid">${cards}</div>` +
+    (isOwner
+      ? `<button class="adminlink" onclick="admin()">Админ ZAFAYHA</button>`
+      : ''
+    );
 }
 
-window.addToCart = function (id) {
-  const product = products.find(product => String(product.id) === String(id));
-
-  if (!product) return;
-
-  if (Number(product.stock || 0) <= 0) {
-    if (tg?.showAlert) {
-      tg.showAlert('Товар закончился');
-    }
-    return;
-  }
-
-  cart.push(String(id));
-
-  updateCartCounter();
+window.addToCart = function(id) {
+  cart.push(id);
+  cartView();
 };
-
-function updateCartCounter() {
-  const cartButton = document.querySelector(
-    'nav button[data-action="cart"]'
-  );
-
-  if (!cartButton) return;
-
-  cartButton.textContent = `Корзина ${cart.length}`;
-}
 
 function cartView() {
   const rows = cart
-    .map(id =>
-      products.find(product => String(product.id) === String(id))
-    )
+    .map(id => products.find(p => String(p.id) === String(id)))
     .filter(Boolean);
 
   const total = rows.reduce(
-    (sum, product) => sum + Number(product.price || 0),
+    (sum, p) => sum + Number(p.price || 0),
     0
   );
 
-  app.innerHTML = `
-    ${hero('Корзина')}
-
+  app.innerHTML =
+    hero('Корзина') +
+    `
     <section class="panel">
 
       ${
         rows.length
-          ? rows.map((product, index) => `
+          ? rows.map((p, index) => `
               <p>
-                ${product.name} — ${money(product.price)}
-                <button onclick="removeFromCart(${index})">
-                  Удалить
-                </button>
+                ${p.name} — ${money(p.price)}
+                <button onclick="removeFromCart(${index})">×</button>
               </p>
             `).join('')
-          : '<p>Корзина пуста</p>'
+          : '<p>Корзина пуста.</p>'
       }
 
       ${
@@ -208,80 +147,350 @@ function cartView() {
       }
 
     </section>
-  `;
+    `;
 }
 
-window.removeFromCart = function (index) {
+window.removeFromCart = function(index) {
   cart.splice(index, 1);
-  updateCartCounter();
   cartView();
 };
 
 function tryon() {
-  app.innerHTML = `
-    ${hero('Примерьте образ.')}
-
+  app.innerHTML =
+    hero('Примерьте образ.') +
+    `
     <section class="panel">
-      <h2>AI-примерка</h2>
-      <p>Скоро здесь можно будет примерить образ.</p>
+      <h2>AI примерка</h2>
+      <p>Скоро здесь можно будет примерить образ ZAFAYHA.</p>
     </section>
-  `;
+    `;
 }
 
 function gift() {
-  app.innerHTML = `
-    ${hero('Передайте тепло.')}
-
+  app.innerHTML =
+    hero('Передайте тепло.') +
+    `
     <section class="panel">
       <h2>Подарок ZAFAYHA</h2>
-      <p>Выберите платок и подарите его близкому человеку.</p>
+      <p>Скоро здесь можно будет оформить подарок.</p>
     </section>
-  `;
+    `;
 }
 
-window.admin = function () {
+/* =========================
+   ADMIN
+========================= */
+
+function admin() {
   if (!isOwner) {
-    app.innerHTML = `
-      ${hero('ZAFAYHA')}
-      <section class="panel">
-        <h2>Нет доступа</h2>
-      </section>
-    `;
+    shop();
     return;
   }
 
-  app.innerHTML = `
-    ${hero('Управление ZAFAYHA')}
+  app.innerHTML =
+    hero('Управление ZAFAYHA') +
+    `
+    <section class="panel">
+
+      <h2>Добавить товар</h2>
+
+      <input
+        id="productName"
+        placeholder="Название"
+      >
+
+      <input
+        id="productColor"
+        placeholder="Цвет"
+      >
+
+      <input
+        id="productPrice"
+        type="number"
+        placeholder="Цена"
+      >
+
+      <input
+        id="productStock"
+        type="number"
+        placeholder="Количество"
+      >
+
+      <input
+        id="productImage"
+        placeholder="Ссылка на фото"
+      >
+
+      <button onclick="createProduct()">
+        Добавить товар
+      </button>
+
+    </section>
 
     <section class="panel">
-      <h2>Админ-панель</h2>
-      <p>Доступ подтверждён.</p>
-      <p>Следующим шагом добавим сюда управление товарами.</p>
+      <h2>Товары</h2>
+
+      ${
+        products.length
+          ? products.map(p => `
+              <div class="admin-product">
+
+                <strong>${p.name}</strong>
+
+                <p>
+                  ${p.color || ''}
+                  · ${Number(p.stock || 0)} шт.
+                  · ${money(p.price)}
+                </p>
+
+                <button onclick="editProduct('${p.id}')">
+                  Изменить
+                </button>
+
+                <button onclick="deleteProduct('${p.id}')">
+                  Удалить
+                </button>
+
+              </div>
+            `).join('')
+          : '<p>Товаров пока нет.</p>'
+      }
 
       <button onclick="shop()">
         Вернуться в магазин
       </button>
+
     </section>
-  `;
+    `;
+}
+
+window.admin = admin;
+
+window.createProduct = async function() {
+  if (!isOwner) return;
+
+  const name = document.querySelector('#productName').value.trim();
+  const color = document.querySelector('#productColor').value.trim();
+  const price = Number(document.querySelector('#productPrice').value);
+  const stock = Number(document.querySelector('#productStock').value);
+  const image_url = document.querySelector('#productImage').value.trim();
+
+  if (!name) {
+    alert('Введите название товара.');
+    return;
+  }
+
+  if (!price || price < 0) {
+    alert('Введите цену.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products`,
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify({
+          name,
+          color,
+          price,
+          stock,
+          image_url: image_url || null,
+          active: true
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText);
+    }
+
+    await refreshAdmin();
+
+  } catch (error) {
+    console.error(error);
+    alert('Не удалось добавить товар.');
+  }
 };
 
+window.editProduct = function(id) {
+  if (!isOwner) return;
+
+  const product = products.find(
+    p => String(p.id) === String(id)
+  );
+
+  if (!product) return;
+
+  app.innerHTML =
+    hero('Изменить товар') +
+    `
+    <section class="panel">
+
+      <input
+        id="editName"
+        value="${product.name || ''}"
+        placeholder="Название"
+      >
+
+      <input
+        id="editColor"
+        value="${product.color || ''}"
+        placeholder="Цвет"
+      >
+
+      <input
+        id="editPrice"
+        type="number"
+        value="${Number(product.price || 0)}"
+        placeholder="Цена"
+      >
+
+      <input
+        id="editStock"
+        type="number"
+        value="${Number(product.stock || 0)}"
+        placeholder="Количество"
+      >
+
+      <input
+        id="editImage"
+        value="${product.image_url || ''}"
+        placeholder="Ссылка на фото"
+      >
+
+      <button onclick="saveProduct('${product.id}')">
+        Сохранить изменения
+      </button>
+
+      <button onclick="admin()">
+        Отмена
+      </button>
+
+    </section>
+    `;
+};
+
+window.saveProduct = async function(id) {
+  if (!isOwner) return;
+
+  const name = document.querySelector('#editName').value.trim();
+  const color = document.querySelector('#editColor').value.trim();
+  const price = Number(document.querySelector('#editPrice').value);
+  const stock = Number(document.querySelector('#editStock').value);
+  const image_url = document.querySelector('#editImage').value.trim();
+
+  if (!name) {
+    alert('Введите название.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          name,
+          color,
+          price,
+          stock,
+          image_url: image_url || null
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText);
+    }
+
+    await refreshAdmin();
+
+  } catch (error) {
+    console.error(error);
+    alert('Не удалось изменить товар.');
+  }
+};
+
+window.deleteProduct = async function(id) {
+  if (!isOwner) return;
+
+  const confirmed = confirm(
+    'Удалить этот товар из ZAFAYHA?'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+        headers
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText);
+    }
+
+    await refreshAdmin();
+
+  } catch (error) {
+    console.error(error);
+    alert('Не удалось удалить товар.');
+  }
+};
+
+async function refreshAdmin() {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?select=*&order=created_at.desc`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Ошибка: ${response.status}`);
+    }
+
+    products = await response.json();
+    admin();
+
+  } catch (error) {
+    console.error(error);
+    alert('Не удалось обновить список товаров.');
+  }
+}
+
+window.loadProducts = loadProducts;
+window.shop = shop;
+
+/* =========================
+   NAVIGATION
+========================= */
+
 document.querySelectorAll('nav button').forEach(button => {
-  button.addEventListener('click', () => {
+  button.onclick = () => {
     const action = button.dataset.action;
 
     if (action === 'shop') shop();
     if (action === 'tryon') tryon();
     if (action === 'gift') gift();
     if (action === 'cart') cartView();
-  });
+  };
 });
 
 if (tg) {
   tg.ready();
   tg.expand();
 }
-
-window.loadProducts = loadProducts;
-window.shop = shop;
 
 loadProducts();
