@@ -3,9 +3,14 @@ const OWNER_IDS = ['8713197897', '8886448593'];
 const SUPABASE_URL = 'https://ackordxxqeccjlifzgop.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
 
+const PAYMENT_CARD = '9860350148420911';
+const PAYMENT_CARD_DISPLAY = '9860 3501 4842 0911';
+const PAYMENT_RECIPIENT = 'M.K';
+
 let products = [];
 let cart = JSON.parse(localStorage.getItem('zafayha_cart') || '[]');
 let orderSending = false;
+let pendingOrder = null;
 
 const app = document.querySelector('#app');
 const tg = window.Telegram?.WebApp;
@@ -467,11 +472,10 @@ window.checkout = function() {
         ></textarea>
 
         <button
-          id="sendOrderButton"
           class="primary-button"
           onclick="sendOrder()"
         >
-          Подтвердить заказ
+          Продолжить к оплате
         </button>
 
         <button onclick="cartView()">
@@ -483,12 +487,10 @@ window.checkout = function() {
 };
 
 /* =========================
-   SEND ORDER TO TELEGRAM
+   PREPARE ORDER
 ========================= */
 
-window.sendOrder = async function() {
-  if (orderSending) return;
-
+window.sendOrder = function() {
   const name =
     document.querySelector('#customerName')?.value.trim();
 
@@ -538,14 +540,159 @@ window.sendOrder = async function() {
     0
   );
 
+  pendingOrder = {
+    name,
+    phone,
+    address,
+    comment,
+    items: orderItems,
+    total,
+
+    telegramUser: user
+      ? {
+          id: user.id,
+          first_name: user.first_name || '',
+          last_name: user.last_name || '',
+          username: user.username || ''
+        }
+      : null
+  };
+
+  paymentView();
+};
+
+/* =========================
+   PAYMENT
+========================= */
+
+function paymentView() {
+  if (!pendingOrder) {
+    checkout();
+    return;
+  }
+
+  setActiveNav('cart');
+
+  app.innerHTML =
+    hero(
+      'Оплата заказа.',
+      'Переведите сумму на карту ZAFAYHA.'
+    ) +
+    `
+      <section class="panel checkout-panel">
+
+        <h2>К оплате</h2>
+
+        <div class="cart-total">
+          <span>Итого</span>
+          <strong>${money(pendingOrder.total)}</strong>
+        </div>
+
+        <p>
+          Переведите точную сумму заказа на карту:
+        </p>
+
+        <div
+          style="
+            margin: 18px 0;
+            padding: 22px 16px;
+            border-radius: 20px;
+            background: #f5eeee;
+            text-align: center;
+          "
+        >
+
+          <div
+            style="
+              font-size: 13px;
+              margin-bottom: 9px;
+              opacity: 0.7;
+            "
+          >
+            Номер карты
+          </div>
+
+          <strong
+            style="
+              display: block;
+              font-size: 20px;
+              letter-spacing: 1px;
+              margin-bottom: 10px;
+            "
+          >
+            ${PAYMENT_CARD_DISPLAY}
+          </strong>
+
+          <div>
+            Получатель: ${PAYMENT_RECIPIENT}
+          </div>
+
+        </div>
+
+        <button
+          class="primary-button"
+          onclick="copyCardNumber()"
+        >
+          Скопировать номер карты
+        </button>
+
+        <p
+          style="
+            margin-top: 20px;
+            font-size: 13px;
+            line-height: 1.5;
+            opacity: 0.72;
+          "
+        >
+          После перевода нажмите «Я оплатил».
+          Мы проверим поступление денег и свяжемся с вами.
+        </p>
+
+        <button
+          id="paidButton"
+          class="primary-button"
+          onclick="confirmPayment()"
+        >
+          Я оплатил
+        </button>
+
+        <button onclick="checkout()">
+          Назад
+        </button>
+
+      </section>
+    `;
+}
+
+window.copyCardNumber = async function() {
+  try {
+    await navigator.clipboard.writeText(PAYMENT_CARD);
+
+    showNotice('Номер карты скопирован.');
+  } catch (error) {
+    console.error(error);
+
+    showNotice(
+      `Номер карты: ${PAYMENT_CARD_DISPLAY}`
+    );
+  }
+};
+
+/* =========================
+   SEND ORDER AFTER PAYMENT
+========================= */
+
+window.confirmPayment = async function() {
+  if (orderSending || !pendingOrder) return;
+
   const button =
-    document.querySelector('#sendOrderButton');
+    document.querySelector('#paidButton');
 
   orderSending = true;
 
   if (button) {
     button.disabled = true;
-    button.textContent = 'Отправляем заказ...';
+    button.textContent = 'Отправляем...';
   }
 
   try {
@@ -556,23 +703,7 @@ window.sendOrder = async function() {
         'Content-Type': 'application/json'
       },
 
-      body: JSON.stringify({
-        name,
-        phone,
-        address,
-        comment,
-        items: orderItems,
-        total,
-
-        telegramUser: user
-          ? {
-              id: user.id,
-              first_name: user.first_name || '',
-              last_name: user.last_name || '',
-              username: user.username || ''
-            }
-          : null
-      })
+      body: JSON.stringify(pendingOrder)
     });
 
     let result = null;
@@ -589,22 +720,31 @@ window.sendOrder = async function() {
       );
     }
 
+    const customerName = pendingOrder.name;
+
     cart = [];
+    pendingOrder = null;
+
     saveCart();
 
     app.innerHTML =
       hero(
-        'Спасибо за заказ.',
-        'Мы получили вашу заявку.'
+        'Спасибо.',
+        'Ваш заказ принят.'
       ) +
       `
         <section class="panel">
 
-          <h2>Заказ успешно отправлен</h2>
+          <h2>Заказ принят</h2>
 
           <p>
-            Спасибо, ${name}! Команда ZAFAYHA свяжется с вами
-            по указанному номеру телефона.
+            Спасибо, ${customerName}!
+          </p>
+
+          <p>
+            Мы получили информацию о вашем заказе.
+            Сейчас проверим поступление оплаты и свяжемся
+            с вами для подтверждения.
           </p>
 
           <button
@@ -619,10 +759,12 @@ window.sendOrder = async function() {
 
     setActiveNav('shop');
 
-    showNotice('Заказ успешно отправлен в ZAFAYHA.');
+    showNotice(
+      'Спасибо! Мы проверим поступление оплаты.'
+    );
 
   } catch (error) {
-    console.error('Send order error:', error);
+    console.error('Payment confirmation error:', error);
 
     showNotice(
       'Не удалось отправить заказ. Попробуйте ещё раз.'
@@ -630,7 +772,7 @@ window.sendOrder = async function() {
 
     if (button) {
       button.disabled = false;
-      button.textContent = 'Подтвердить заказ';
+      button.textContent = 'Я оплатил';
     }
 
   } finally {
