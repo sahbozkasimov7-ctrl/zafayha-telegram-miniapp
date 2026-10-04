@@ -3,16 +3,24 @@ const OWNER_IDS = ['8713197897', '8886448593'];
 const SUPABASE_URL = 'https://ackordxxqeccjlifzgop.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
 
+const STORAGE_BUCKET = 'product-images';
+
 const PAYMENT_CARD = '9860350148420911';
 const PAYMENT_CARD_DISPLAY = '9860 3501 4842 0911';
 const PAYMENT_RECIPIENT = 'M.K';
 
 let products = [];
 let cart = JSON.parse(localStorage.getItem('zafayha_cart') || '[]');
+
 let orderSending = false;
+let productSaving = false;
 let pendingOrder = null;
 
+let newProductImageFile = null;
+let editProductImageFile = null;
+
 const app = document.querySelector('#app');
+
 const tg = window.Telegram?.WebApp;
 const user = tg?.initDataUnsafe?.user || null;
 
@@ -37,35 +45,50 @@ function hero(title, subtitle = '') {
   return `
     <section class="hero">
       <div class="eyebrow">ZAFAYHA</div>
+
       <h1>${title}</h1>
-      ${subtitle ? `<p class="hero-subtitle">${subtitle}</p>` : ''}
+
+      ${
+        subtitle
+          ? `<p class="hero-subtitle">${subtitle}</p>`
+          : ''
+      }
     </section>
   `;
 }
 
 function saveCart() {
-  localStorage.setItem('zafayha_cart', JSON.stringify(cart));
+  localStorage.setItem(
+    'zafayha_cart',
+    JSON.stringify(cart)
+  );
+
   updateCartBadge();
 }
 
 function cartCount() {
   return cart.reduce(
-    (sum, item) => sum + Number(item.quantity || 0),
+    (sum, item) =>
+      sum + Number(item.quantity || 0),
     0
   );
 }
 
 function updateCartBadge() {
-  document.querySelectorAll('nav button').forEach(button => {
-    if (button.dataset.action === 'cart') {
-      button.textContent = `Корзина ${cartCount()}`;
-    }
-  });
+  document
+    .querySelectorAll('nav button')
+    .forEach(button => {
+      if (button.dataset.action === 'cart') {
+        button.textContent =
+          `Корзина ${cartCount()}`;
+      }
+    });
 }
 
 function getProduct(id) {
   return products.find(
-    p => String(p.id) === String(id)
+    product =>
+      String(product.id) === String(id)
   );
 }
 
@@ -78,13 +101,187 @@ function showNotice(message) {
 }
 
 function setActiveNav(action) {
-  document.querySelectorAll('nav button').forEach(button => {
-    button.classList.toggle(
-      'active',
-      button.dataset.action === action
-    );
-  });
+  document
+    .querySelectorAll('nav button')
+    .forEach(button => {
+      button.classList.toggle(
+        'active',
+        button.dataset.action === action
+      );
+    });
 }
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+/* =========================
+   IMAGE UPLOAD
+========================= */
+
+function createImageFileName(file) {
+  const extension =
+    file.name
+      ?.split('.')
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, '') || 'jpg';
+
+  const random =
+    Math.random()
+      .toString(36)
+      .slice(2, 10);
+
+  return `${Date.now()}-${random}.${extension}`;
+}
+
+async function uploadProductImage(file) {
+  if (!file) return null;
+
+  if (!file.type?.startsWith('image/')) {
+    throw new Error('Выбранный файл не является фотографией.');
+  }
+
+  /*
+    Ограничиваем очень большие файлы,
+    чтобы магазин оставался быстрым.
+  */
+  const maxSize = 10 * 1024 * 1024;
+
+  if (file.size > maxSize) {
+    throw new Error(
+      'Фото слишком большое. Выберите фото до 10 МБ.'
+    );
+  }
+
+  const fileName = createImageFileName(file);
+
+  const uploadUrl =
+    `${SUPABASE_URL}/storage/v1/object/` +
+    `${STORAGE_BUCKET}/${fileName}`;
+
+  const response = await fetch(
+    uploadUrl,
+    {
+      method: 'POST',
+
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type':
+          file.type || 'application/octet-stream'
+      },
+
+      body: file
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    console.error(
+      'Image upload error:',
+      errorText
+    );
+
+    throw new Error(
+      'Не удалось загрузить фотографию.'
+    );
+  }
+
+  return (
+    `${SUPABASE_URL}/storage/v1/object/public/` +
+    `${STORAGE_BUCKET}/${fileName}`
+  );
+}
+
+function showLocalImagePreview(file, targetId) {
+  const preview =
+    document.querySelector(`#${targetId}`);
+
+  if (!preview || !file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = event => {
+    preview.innerHTML = `
+      <div
+        style="
+          margin-top: 14px;
+          border-radius: 22px;
+          overflow: hidden;
+          background: #f3efea;
+        "
+      >
+        <img
+          src="${event.target.result}"
+          alt="Фото товара"
+          style="
+            display: block;
+            width: 100%;
+            aspect-ratio: 4 / 5;
+            object-fit: cover;
+          "
+        >
+      </div>
+
+      <p
+        style="
+          margin-top: 8px;
+          font-size: 13px;
+          opacity: .65;
+        "
+      >
+        Фото готово к загрузке
+      </p>
+    `;
+  };
+
+  reader.readAsDataURL(file);
+}
+
+window.selectNewProductImage = function(event) {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  if (!file.type?.startsWith('image/')) {
+    showNotice('Выберите фотографию.');
+    event.target.value = '';
+    return;
+  }
+
+  newProductImageFile = file;
+
+  showLocalImagePreview(
+    file,
+    'newProductImagePreview'
+  );
+};
+
+window.selectEditProductImage = function(event) {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  if (!file.type?.startsWith('image/')) {
+    showNotice('Выберите фотографию.');
+    event.target.value = '';
+    return;
+  }
+
+  editProductImageFile = file;
+
+  showLocalImagePreview(
+    file,
+    'editProductImagePreview'
+  );
+};
 
 /* =========================
    PRODUCTS
@@ -93,6 +290,7 @@ function setActiveNav(action) {
 async function loadProducts() {
   app.innerHTML = `
     ${hero('Тихая элегантность.')}
+
     <section class="panel">
       <p>Загружаем коллекцию...</p>
     </section>
@@ -105,13 +303,19 @@ async function loadProducts() {
     );
 
     if (!response.ok) {
-      throw new Error(`Ошибка загрузки: ${response.status}`);
+      throw new Error(
+        `Ошибка загрузки: ${response.status}`
+      );
     }
 
     products = await response.json();
 
     cart = cart.filter(item =>
-      products.some(p => String(p.id) === String(item.id))
+      products.some(
+        product =>
+          String(product.id) ===
+          String(item.id)
+      )
     );
 
     saveCart();
@@ -122,10 +326,17 @@ async function loadProducts() {
 
     app.innerHTML = `
       ${hero('ZAFAYHA')}
+
       <section class="panel">
         <h2>Не удалось загрузить товары</h2>
-        <p>Попробуйте открыть магазин ещё раз.</p>
-        <button onclick="loadProducts()">Повторить</button>
+
+        <p>
+          Попробуйте открыть магазин ещё раз.
+        </p>
+
+        <button onclick="loadProducts()">
+          Повторить
+        </button>
       </section>
     `;
   }
@@ -139,64 +350,197 @@ function shop() {
   setActiveNav('shop');
 
   const cards = products.length
-    ? products.map(p => `
-        <article class="card">
+    ? products.map(product => {
+        const name =
+          escapeHtml(
+            product.name || 'ZAFAYHA'
+          );
 
-          ${
-            p.image_url
-              ? `
-                <div class="product-image">
-                  <img
-                    src="${p.image_url}"
-                    alt="${p.name || 'ZAFAYHA'}"
-                  >
-                </div>
-              `
-              : ''
-          }
+        const color =
+          escapeHtml(
+            product.color || ''
+          );
 
-          <div class="card-content">
+        const stock =
+          Number(product.stock || 0);
 
-            <h3>${p.name || 'ZAFAYHA'}</h3>
-
-            ${
-              p.color
-                ? `<p class="product-color">${p.color}</p>`
-                : ''
-            }
-
-            <p class="product-stock">
-              ${Number(p.stock || 0)} шт.
-            </p>
-
-            <strong class="product-price">
-              ${money(p.price)}
-            </strong>
+        return `
+          <article
+            class="card"
+            style="
+              overflow: hidden;
+              padding: 0;
+              margin-bottom: 22px;
+              border-radius: 26px;
+            "
+          >
 
             ${
-              Number(p.stock || 0) > 0
+              product.image_url
                 ? `
-                  <button
-                    class="primary-button"
-                    onclick="addToCart('${p.id}')"
+                  <div
+                    class="product-image"
+                    style="
+                      width: 100%;
+                      overflow: hidden;
+                      background: #f1ece6;
+                    "
                   >
-                    В корзину
-                  </button>
+                    <img
+                      src="${escapeHtml(product.image_url)}"
+                      alt="${name}"
+                      loading="lazy"
+                      style="
+                        display: block;
+                        width: 100%;
+                        aspect-ratio: 4 / 5;
+                        object-fit: cover;
+                      "
+                    >
+                  </div>
                 `
                 : `
-                  <button disabled>
-                    Нет в наличии
-                  </button>
+                  <div
+                    style="
+                      width: 100%;
+                      aspect-ratio: 4 / 5;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      background:
+                        linear-gradient(
+                          145deg,
+                          #f4efea,
+                          #e9dfd9
+                        );
+                    "
+                  >
+                    <div
+                      style="
+                        text-align: center;
+                        opacity: .55;
+                      "
+                    >
+                      <div
+                        style="
+                          font-size: 12px;
+                          letter-spacing: 3px;
+                        "
+                      >
+                        ZAFAYHA
+                      </div>
+                    </div>
+                  </div>
                 `
             }
 
-          </div>
-        </article>
-      `).join('')
+            <div
+              class="card-content"
+              style="
+                padding: 20px;
+              "
+            >
+
+              ${
+                color
+                  ? `
+                    <div
+                      style="
+                        margin-bottom: 7px;
+                        font-size: 12px;
+                        letter-spacing: 1.4px;
+                        text-transform: uppercase;
+                        opacity: .58;
+                      "
+                    >
+                      ${color}
+                    </div>
+                  `
+                  : ''
+              }
+
+              <h3
+                style="
+                  margin-top: 0;
+                  margin-bottom: 9px;
+                  font-size: 22px;
+                "
+              >
+                ${name}
+              </h3>
+
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 14px;
+                  margin-bottom: 18px;
+                "
+              >
+
+                <strong
+                  class="product-price"
+                  style="
+                    font-size: 18px;
+                  "
+                >
+                  ${money(product.price)}
+                </strong>
+
+                <span
+                  style="
+                    font-size: 12px;
+                    opacity: .58;
+                  "
+                >
+                  ${
+                    stock > 0
+                      ? `${stock} шт.`
+                      : 'Нет в наличии'
+                  }
+                </span>
+
+              </div>
+
+              ${
+                stock > 0
+                  ? `
+                    <button
+                      class="primary-button"
+                      onclick="addToCart('${product.id}')"
+                      style="
+                        width: 100%;
+                      "
+                    >
+                      В корзину
+                    </button>
+                  `
+                  : `
+                    <button
+                      disabled
+                      style="
+                        width: 100%;
+                      "
+                    >
+                      Нет в наличии
+                    </button>
+                  `
+              }
+
+            </div>
+
+          </article>
+        `;
+      }).join('')
     : `
       <section class="panel">
         <h2>Новая коллекция готовится</h2>
-        <p>Совсем скоро здесь появятся новые образы ZAFAYHA.</p>
+
+        <p>
+          Совсем скоро здесь появятся
+          новые образы ZAFAYHA.
+        </p>
       </section>
     `;
 
@@ -205,7 +549,16 @@ function shop() {
       'Тихая элегантность.',
       'Коллекция, созданная для вашего образа.'
     ) +
-    `<div class="grid">${cards}</div>` +
+    `
+      <div
+        class="grid"
+        style="
+          display: block;
+        "
+      >
+        ${cards}
+      </div>
+    ` +
     (
       isOwner
         ? `
@@ -232,21 +585,32 @@ window.addToCart = function(id) {
   if (!product) return;
 
   if (Number(product.stock || 0) <= 0) {
-    showNotice('Товара сейчас нет в наличии.');
+    showNotice(
+      'Товара сейчас нет в наличии.'
+    );
+
     return;
   }
 
   const existing = cart.find(
-    item => String(item.id) === String(id)
+    item =>
+      String(item.id) === String(id)
   );
 
   if (existing) {
-    if (existing.quantity >= Number(product.stock)) {
-      showNotice('Больше этого количества сейчас нет в наличии.');
+    if (
+      existing.quantity >=
+      Number(product.stock)
+    ) {
+      showNotice(
+        'Больше этого количества сейчас нет в наличии.'
+      );
+
       return;
     }
 
     existing.quantity += 1;
+
   } else {
     cart.push({
       id,
@@ -256,28 +620,44 @@ window.addToCart = function(id) {
 
   saveCart();
 
-  showNotice(`${product.name} добавлен в корзину.`);
+  showNotice(
+    `${product.name} добавлен в корзину.`
+  );
 };
 
-window.changeQuantity = function(id, change) {
+window.changeQuantity = function(
+  id,
+  change
+) {
   const item = cart.find(
-    item => String(item.id) === String(id)
+    item =>
+      String(item.id) === String(id)
   );
 
   const product = getProduct(id);
 
   if (!item || !product) return;
 
-  const nextQuantity = item.quantity + change;
+  const nextQuantity =
+    item.quantity + change;
 
   if (nextQuantity <= 0) {
     cart = cart.filter(
-      item => String(item.id) !== String(id)
+      item =>
+        String(item.id) !== String(id)
     );
-  } else if (nextQuantity <= Number(product.stock || 0)) {
+
+  } else if (
+    nextQuantity <=
+    Number(product.stock || 0)
+  ) {
     item.quantity = nextQuantity;
+
   } else {
-    showNotice('Больше товара сейчас нет в наличии.');
+    showNotice(
+      'Больше товара сейчас нет в наличии.'
+    );
+
     return;
   }
 
@@ -287,7 +667,8 @@ window.changeQuantity = function(id, change) {
 
 window.removeFromCart = function(id) {
   cart = cart.filter(
-    item => String(item.id) !== String(id)
+    item =>
+      String(item.id) !== String(id)
   );
 
   saveCart();
@@ -329,8 +710,8 @@ function cartView() {
                     item.product.image_url
                       ? `
                         <img
-                          src="${item.product.image_url}"
-                          alt="${item.product.name}"
+                          src="${escapeHtml(item.product.image_url)}"
+                          alt="${escapeHtml(item.product.name)}"
                         >
                       `
                       : ''
@@ -339,11 +720,11 @@ function cartView() {
                   <div class="cart-info">
 
                     <strong>
-                      ${item.product.name}
+                      ${escapeHtml(item.product.name)}
                     </strong>
 
                     <p>
-                      ${item.product.color || ''}
+                      ${escapeHtml(item.product.color || '')}
                     </p>
 
                     <p>
@@ -382,40 +763,43 @@ function cartView() {
                 </div>
               `).join('')
             : `
-                <div class="empty-state">
-                  <h2>Корзина пуста</h2>
+              <div class="empty-state">
 
-                  <p>
-                    Добавьте понравившиеся изделия из коллекции.
-                  </p>
+                <h2>Корзина пуста</h2>
 
-                  <button onclick="shop()">
-                    Смотреть коллекцию
-                  </button>
-                </div>
-              `
+                <p>
+                  Добавьте понравившиеся изделия
+                  из коллекции.
+                </p>
+
+                <button onclick="shop()">
+                  Смотреть коллекцию
+                </button>
+
+              </div>
+            `
         }
 
         ${
           rows.length
             ? `
-                <div class="cart-total">
+              <div class="cart-total">
 
-                  <span>Итого</span>
+                <span>Итого</span>
 
-                  <strong>
-                    ${money(total)}
-                  </strong>
+                <strong>
+                  ${money(total)}
+                </strong>
 
-                </div>
+              </div>
 
-                <button
-                  class="checkout-button"
-                  onclick="checkout()"
-                >
-                  Оформить заказ
-                </button>
-              `
+              <button
+                class="checkout-button"
+                onclick="checkout()"
+              >
+                Оформить заказ
+              </button>
+            `
             : ''
         }
 
@@ -492,39 +876,62 @@ window.checkout = function() {
 
 window.sendOrder = function() {
   const name =
-    document.querySelector('#customerName')?.value.trim();
+    document
+      .querySelector('#customerName')
+      ?.value
+      .trim();
 
   const phone =
-    document.querySelector('#customerPhone')?.value.trim();
+    document
+      .querySelector('#customerPhone')
+      ?.value
+      .trim();
 
   const address =
-    document.querySelector('#customerAddress')?.value.trim();
+    document
+      .querySelector('#customerAddress')
+      ?.value
+      .trim();
 
   const comment =
-    document.querySelector('#customerComment')?.value.trim() || '';
+    document
+      .querySelector('#customerComment')
+      ?.value
+      .trim() || '';
 
   if (!name || !phone) {
-    showNotice('Введите имя и номер телефона.');
+    showNotice(
+      'Введите имя и номер телефона.'
+    );
+
     return;
   }
 
   if (!address) {
-    showNotice('Введите адрес доставки.');
+    showNotice(
+      'Введите адрес доставки.'
+    );
+
     return;
   }
 
   const orderItems = cart
     .map(item => {
-      const product = getProduct(item.id);
+      const product =
+        getProduct(item.id);
 
       if (!product) return null;
 
       return {
         id: product.id,
-        name: product.name || 'ZAFAYHA',
-        color: product.color || '',
-        price: Number(product.price || 0),
-        quantity: Number(item.quantity || 0)
+        name:
+          product.name || 'ZAFAYHA',
+        color:
+          product.color || '',
+        price:
+          Number(product.price || 0),
+        quantity:
+          Number(item.quantity || 0)
       };
     })
     .filter(Boolean);
@@ -534,11 +941,13 @@ window.sendOrder = function() {
     return;
   }
 
-  const total = orderItems.reduce(
-    (sum, item) =>
-      sum + item.price * item.quantity,
-    0
-  );
+  const total =
+    orderItems.reduce(
+      (sum, item) =>
+        sum +
+        item.price * item.quantity,
+      0
+    );
 
   pendingOrder = {
     name,
@@ -551,9 +960,12 @@ window.sendOrder = function() {
     telegramUser: user
       ? {
           id: user.id,
-          first_name: user.first_name || '',
-          last_name: user.last_name || '',
-          username: user.username || ''
+          first_name:
+            user.first_name || '',
+          last_name:
+            user.last_name || '',
+          username:
+            user.username || ''
         }
       : null
   };
@@ -584,12 +996,18 @@ function paymentView() {
         <h2>К оплате</h2>
 
         <div class="cart-total">
+
           <span>Итого</span>
-          <strong>${money(pendingOrder.total)}</strong>
+
+          <strong>
+            ${money(pendingOrder.total)}
+          </strong>
+
         </div>
 
         <p>
-          Переведите точную сумму заказа на карту:
+          Переведите точную сумму заказа
+          на карту:
         </p>
 
         <div
@@ -624,7 +1042,8 @@ function paymentView() {
           </strong>
 
           <div>
-            Получатель: ${PAYMENT_RECIPIENT}
+            Получатель:
+            ${PAYMENT_RECIPIENT}
           </div>
 
         </div>
@@ -644,8 +1063,10 @@ function paymentView() {
             opacity: 0.72;
           "
         >
-          После перевода нажмите «Я оплатил».
-          Мы проверим поступление денег и свяжемся с вами.
+          После перевода нажмите
+          «Я оплатил».
+          Мы проверим поступление денег
+          и свяжемся с вами.
         </p>
 
         <button
@@ -664,121 +1085,160 @@ function paymentView() {
     `;
 }
 
-window.copyCardNumber = async function() {
-  try {
-    await navigator.clipboard.writeText(PAYMENT_CARD);
+window.copyCardNumber =
+  async function() {
+    try {
+      await navigator.clipboard.writeText(
+        PAYMENT_CARD
+      );
 
-    showNotice('Номер карты скопирован.');
-  } catch (error) {
-    console.error(error);
+      showNotice(
+        'Номер карты скопирован.'
+      );
 
-    showNotice(
-      `Номер карты: ${PAYMENT_CARD_DISPLAY}`
-    );
-  }
-};
+    } catch (error) {
+      console.error(error);
+
+      showNotice(
+        `Номер карты: ${PAYMENT_CARD_DISPLAY}`
+      );
+    }
+  };
 
 /* =========================
    SEND ORDER AFTER PAYMENT
 ========================= */
 
-window.confirmPayment = async function() {
-  if (orderSending || !pendingOrder) return;
-
-  const button =
-    document.querySelector('#paidButton');
-
-  orderSending = true;
-
-  if (button) {
-    button.disabled = true;
-    button.textContent = 'Отправляем...';
-  }
-
-  try {
-    const response = await fetch('/api/send-order', {
-      method: 'POST',
-
-      headers: {
-        'Content-Type': 'application/json'
-      },
-
-      body: JSON.stringify(pendingOrder)
-    });
-
-    let result = null;
-
-    try {
-      result = await response.json();
-    } catch (jsonError) {
-      console.error('JSON error:', jsonError);
+window.confirmPayment =
+  async function() {
+    if (
+      orderSending ||
+      !pendingOrder
+    ) {
+      return;
     }
 
-    if (!response.ok || !result?.ok) {
-      throw new Error(
-        result?.error || `Ошибка отправки: ${response.status}`
+    const button =
+      document.querySelector(
+        '#paidButton'
       );
-    }
 
-    const customerName = pendingOrder.name;
-
-    cart = [];
-    pendingOrder = null;
-
-    saveCart();
-
-    app.innerHTML =
-      hero(
-        'Спасибо.',
-        'Ваш заказ принят.'
-      ) +
-      `
-        <section class="panel">
-
-          <h2>Заказ принят</h2>
-
-          <p>
-            Спасибо, ${customerName}!
-          </p>
-
-          <p>
-            Мы получили информацию о вашем заказе.
-            Сейчас проверим поступление оплаты и свяжемся
-            с вами для подтверждения.
-          </p>
-
-          <button
-            class="primary-button"
-            onclick="shop()"
-          >
-            Вернуться в магазин
-          </button>
-
-        </section>
-      `;
-
-    setActiveNav('shop');
-
-    showNotice(
-      'Спасибо! Мы проверим поступление оплаты.'
-    );
-
-  } catch (error) {
-    console.error('Payment confirmation error:', error);
-
-    showNotice(
-      'Не удалось отправить заказ. Попробуйте ещё раз.'
-    );
+    orderSending = true;
 
     if (button) {
-      button.disabled = false;
-      button.textContent = 'Я оплатил';
+      button.disabled = true;
+      button.textContent =
+        'Отправляем...';
     }
 
-  } finally {
-    orderSending = false;
-  }
-};
+    try {
+      const response =
+        await fetch(
+          '/api/send-order',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+
+            body:
+              JSON.stringify(
+                pendingOrder
+              )
+          }
+        );
+
+      let result = null;
+
+      try {
+        result =
+          await response.json();
+      } catch (jsonError) {
+        console.error(
+          'JSON error:',
+          jsonError
+        );
+      }
+
+      if (
+        !response.ok ||
+        !result?.ok
+      ) {
+        throw new Error(
+          result?.error ||
+          `Ошибка отправки: ${response.status}`
+        );
+      }
+
+      const customerName =
+        pendingOrder.name;
+
+      cart = [];
+      pendingOrder = null;
+
+      saveCart();
+
+      app.innerHTML =
+        hero(
+          'Спасибо.',
+          'Ваш заказ принят.'
+        ) +
+        `
+          <section class="panel">
+
+            <h2>Заказ принят</h2>
+
+            <p>
+              Спасибо,
+              ${escapeHtml(customerName)}!
+            </p>
+
+            <p>
+              Мы получили информацию
+              о вашем заказе.
+              Сейчас проверим поступление
+              оплаты и свяжемся с вами
+              для подтверждения.
+            </p>
+
+            <button
+              class="primary-button"
+              onclick="shop()"
+            >
+              Вернуться в магазин
+            </button>
+
+          </section>
+        `;
+
+      setActiveNav('shop');
+
+      showNotice(
+        'Спасибо! Мы проверим поступление оплаты.'
+      );
+
+    } catch (error) {
+      console.error(
+        'Payment confirmation error:',
+        error
+      );
+
+      showNotice(
+        'Не удалось отправить заказ. Попробуйте ещё раз.'
+      );
+
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          'Я оплатил';
+      }
+
+    } finally {
+      orderSending = false;
+    }
+  };
 
 /* =========================
    TRY ON
@@ -799,10 +1259,13 @@ function tryon() {
           ✦
         </div>
 
-        <h2>Виртуальная примерка</h2>
+        <h2>
+          Виртуальная примерка
+        </h2>
 
         <p>
-          Выберите фотографию, а затем изделие ZAFAYHA.
+          Выберите фотографию,
+          а затем изделие ZAFAYHA.
         </p>
 
         <label class="upload-button">
@@ -822,41 +1285,48 @@ function tryon() {
         <div id="tryonPreview"></div>
 
         <p class="feature-note">
-          AI-примерку подключим отдельным этапом.
+          AI-примерку подключим
+          отдельным этапом.
         </p>
 
       </section>
     `;
 }
 
-window.previewTryonPhoto = function(event) {
-  const file = event.target.files?.[0];
+window.previewTryonPhoto =
+  function(event) {
+    const file =
+      event.target.files?.[0];
 
-  if (!file) return;
+    if (!file) return;
 
-  const reader = new FileReader();
+    const reader =
+      new FileReader();
 
-  reader.onload = function(e) {
-    const preview =
-      document.querySelector('#tryonPreview');
+    reader.onload =
+      function(e) {
+        const preview =
+          document.querySelector(
+            '#tryonPreview'
+          );
 
-    if (!preview) return;
+        if (!preview) return;
 
-    preview.innerHTML = `
-      <img
-        class="tryon-preview-image"
-        src="${e.target.result}"
-        alt="Фото для примерки"
-      >
+        preview.innerHTML = `
+          <img
+            class="tryon-preview-image"
+            src="${e.target.result}"
+            alt="Фото для примерки"
+          >
 
-      <p>
-        Фото готово для примерки.
-      </p>
-    `;
+          <p>
+            Фото готово для примерки.
+          </p>
+        `;
+      };
+
+    reader.readAsDataURL(file);
   };
-
-  reader.readAsDataURL(file);
-};
 
 /* =========================
    GIFT
@@ -866,10 +1336,16 @@ function gift() {
   setActiveNav('gift');
 
   const options = products
-    .filter(p => Number(p.stock || 0) > 0)
-    .map(p => `
-      <option value="${p.id}">
-        ${p.name} — ${money(p.price)}
+    .filter(
+      product =>
+        Number(
+          product.stock || 0
+        ) > 0
+    )
+    .map(product => `
+      <option value="${product.id}">
+        ${escapeHtml(product.name)}
+        — ${money(product.price)}
       </option>
     `)
     .join('');
@@ -882,77 +1358,96 @@ function gift() {
     `
       <section class="panel gift-panel">
 
-        <h2>Подарить ZAFAYHA</h2>
+        <h2>
+          Подарить ZAFAYHA
+        </h2>
 
         ${
           options
             ? `
-                <label>Выберите изделие</label>
+              <label>
+                Выберите изделие
+              </label>
 
-                <select id="giftProduct">
-                  ${options}
-                </select>
+              <select id="giftProduct">
+                ${options}
+              </select>
 
-                <label>Имя получателя</label>
+              <label>
+                Имя получателя
+              </label>
 
-                <input
-                  id="giftName"
-                  placeholder="Имя"
-                >
+              <input
+                id="giftName"
+                placeholder="Имя"
+              >
 
-                <label>Телефон получателя</label>
+              <label>
+                Телефон получателя
+              </label>
 
-                <input
-                  id="giftPhone"
-                  type="tel"
-                  placeholder="+998"
-                >
+              <input
+                id="giftPhone"
+                type="tel"
+                placeholder="+998"
+              >
 
-                <label>Ваше пожелание</label>
+              <label>
+                Ваше пожелание
+              </label>
 
-                <textarea
-                  id="giftMessage"
-                  placeholder="Напишите несколько тёплых слов..."
-                ></textarea>
+              <textarea
+                id="giftMessage"
+                placeholder="Напишите несколько тёплых слов..."
+              ></textarea>
 
-                <button
-                  class="primary-button"
-                  onclick="addGiftToCart()"
-                >
-                  Добавить подарок в корзину
-                </button>
-              `
+              <button
+                class="primary-button"
+                onclick="addGiftToCart()"
+              >
+                Добавить подарок в корзину
+              </button>
+            `
             : `
-                <p>
-                  Сейчас нет изделий для оформления подарка.
-                </p>
-              `
+              <p>
+                Сейчас нет изделий
+                для оформления подарка.
+              </p>
+            `
         }
 
       </section>
     `;
 }
 
-window.addGiftToCart = function() {
-  const select =
-    document.querySelector('#giftProduct');
+window.addGiftToCart =
+  function() {
+    const select =
+      document.querySelector(
+        '#giftProduct'
+      );
 
-  const name =
-    document.querySelector('#giftName')?.value.trim();
+    const name =
+      document.querySelector(
+        '#giftName'
+      )?.value.trim();
 
-  if (!select?.value) return;
+    if (!select?.value) return;
 
-  if (!name) {
-    showNotice('Введите имя получателя.');
-    return;
-  }
+    if (!name) {
+      showNotice(
+        'Введите имя получателя.'
+      );
 
-  addToCart(select.value);
+      return;
+    }
 
-  setTimeout(() => {
-    cartView();
-  }, 300);
-};
+    addToCart(select.value);
+
+    setTimeout(() => {
+      cartView();
+    }, 300);
+  };
 
 /* =========================
    ADMIN
@@ -963,6 +1458,8 @@ function admin() {
     shop();
     return;
   }
+
+  newProductImageFile = null;
 
   setActiveNav(null);
 
@@ -976,36 +1473,77 @@ function admin() {
 
         <h2>Добавить товар</h2>
 
+        <label>Название</label>
+
         <input
           id="productName"
-          placeholder="Название"
+          placeholder="Например: Nest Zafayha"
         >
+
+        <label>Цвет</label>
 
         <input
           id="productColor"
-          placeholder="Цвет"
+          placeholder="Например: Black"
         >
+
+        <label>Цена</label>
 
         <input
           id="productPrice"
           type="number"
-          placeholder="Цена"
+          placeholder="100000"
         >
+
+        <label>Количество</label>
 
         <input
           id="productStock"
           type="number"
-          placeholder="Количество"
+          placeholder="5"
         >
 
-        <input
-          id="productImage"
-          placeholder="Ссылка на фото"
+        <label
+          style="
+            display: block;
+            margin-top: 16px;
+          "
         >
+          Фото товара
+        </label>
+
+        <label
+          class="upload-button"
+          style="
+            display: block;
+            text-align: center;
+            margin-top: 8px;
+            cursor: pointer;
+          "
+        >
+          Выбрать фото
+
+          <input
+            id="productImageFile"
+            type="file"
+            accept="image/*"
+            hidden
+            onchange="selectNewProductImage(event)"
+          >
+
+        </label>
+
+        <div
+          id="newProductImagePreview"
+        ></div>
 
         <button
+          id="createProductButton"
           class="primary-button"
           onclick="createProduct()"
+          style="
+            margin-top: 18px;
+          "
         >
           Добавить товар
         </button>
@@ -1018,31 +1556,61 @@ function admin() {
 
         ${
           products.length
-            ? products.map(p => `
-                <div class="admin-product">
-
-                  <strong>${p.name}</strong>
-
-                  <p>
-                    ${p.color || ''}
-                    · ${Number(p.stock || 0)} шт.
-                    · ${money(p.price)}
-                  </p>
-
-                  <button
-                    onclick="editProduct('${p.id}')"
+            ? products
+                .map(product => `
+                  <div
+                    class="admin-product"
+                    style="
+                      padding: 14px 0;
+                    "
                   >
-                    Изменить
-                  </button>
 
-                  <button
-                    onclick="deleteProduct('${p.id}')"
-                  >
-                    Удалить
-                  </button>
+                    ${
+                      product.image_url
+                        ? `
+                          <img
+                            src="${escapeHtml(product.image_url)}"
+                            alt="${escapeHtml(product.name)}"
+                            style="
+                              display: block;
+                              width: 72px;
+                              height: 90px;
+                              object-fit: cover;
+                              border-radius: 14px;
+                              margin-bottom: 10px;
+                            "
+                          >
+                        `
+                        : ''
+                    }
 
-                </div>
-              `).join('')
+                    <strong>
+                      ${escapeHtml(product.name)}
+                    </strong>
+
+                    <p>
+                      ${escapeHtml(product.color || '')}
+                      ·
+                      ${Number(product.stock || 0)} шт.
+                      ·
+                      ${money(product.price)}
+                    </p>
+
+                    <button
+                      onclick="editProduct('${product.id}')"
+                    >
+                      Изменить
+                    </button>
+
+                    <button
+                      onclick="deleteProduct('${product.id}')"
+                    >
+                      Удалить
+                    </button>
+
+                  </div>
+                `)
+                .join('')
             : '<p>Товаров пока нет.</p>'
         }
 
@@ -1056,239 +1624,544 @@ function admin() {
 
 window.admin = admin;
 
-window.createProduct = async function() {
-  if (!isOwner) return;
+/* =========================
+   CREATE PRODUCT
+========================= */
 
-  const name =
-    document.querySelector('#productName').value.trim();
-
-  const color =
-    document.querySelector('#productColor').value.trim();
-
-  const price =
-    Number(document.querySelector('#productPrice').value);
-
-  const stock =
-    Number(document.querySelector('#productStock').value);
-
-  const image_url =
-    document.querySelector('#productImage').value.trim();
-
-  if (!name) {
-    showNotice('Введите название товара.');
-    return;
-  }
-
-  if (!price || price < 0) {
-    showNotice('Введите цену.');
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/products`,
-      {
-        method: 'POST',
-
-        headers: {
-          ...headers,
-          Prefer: 'return=representation'
-        },
-
-        body: JSON.stringify({
-          name,
-          color,
-          price,
-          stock,
-          image_url: image_url || null,
-          active: true
-        })
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(await response.text());
+window.createProduct =
+  async function() {
+    if (
+      !isOwner ||
+      productSaving
+    ) {
+      return;
     }
 
-    await refreshAdmin();
+    const name =
+      document
+        .querySelector('#productName')
+        ?.value
+        .trim();
 
-  } catch (error) {
-    console.error(error);
+    const color =
+      document
+        .querySelector('#productColor')
+        ?.value
+        .trim() || '';
 
-    showNotice('Не удалось добавить товар.');
-  }
-};
+    const price =
+      Number(
+        document
+          .querySelector('#productPrice')
+          ?.value
+      );
 
-window.editProduct = function(id) {
-  if (!isOwner) return;
+    const stock =
+      Number(
+        document
+          .querySelector('#productStock')
+          ?.value
+      );
 
-  const product = getProduct(id);
+    if (!name) {
+      showNotice(
+        'Введите название товара.'
+      );
 
-  if (!product) return;
-
-  setActiveNav(null);
-
-  app.innerHTML =
-    hero('Изменить товар') +
-    `
-      <section class="panel">
-
-        <input
-          id="editName"
-          value="${product.name || ''}"
-          placeholder="Название"
-        >
-
-        <input
-          id="editColor"
-          value="${product.color || ''}"
-          placeholder="Цвет"
-        >
-
-        <input
-          id="editPrice"
-          type="number"
-          value="${Number(product.price || 0)}"
-          placeholder="Цена"
-        >
-
-        <input
-          id="editStock"
-          type="number"
-          value="${Number(product.stock || 0)}"
-          placeholder="Количество"
-        >
-
-        <input
-          id="editImage"
-          value="${product.image_url || ''}"
-          placeholder="Ссылка на фото"
-        >
-
-        <button
-          class="primary-button"
-          onclick="saveProduct('${product.id}')"
-        >
-          Сохранить изменения
-        </button>
-
-        <button onclick="admin()">
-          Отмена
-        </button>
-
-      </section>
-    `;
-};
-
-window.saveProduct = async function(id) {
-  if (!isOwner) return;
-
-  const name =
-    document.querySelector('#editName').value.trim();
-
-  const color =
-    document.querySelector('#editColor').value.trim();
-
-  const price =
-    Number(document.querySelector('#editPrice').value);
-
-  const stock =
-    Number(document.querySelector('#editStock').value);
-
-  const image_url =
-    document.querySelector('#editImage').value.trim();
-
-  if (!name) {
-    showNotice('Введите название.');
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
-      {
-        method: 'PATCH',
-
-        headers,
-
-        body: JSON.stringify({
-          name,
-          color,
-          price,
-          stock,
-          image_url: image_url || null
-        })
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(await response.text());
+      return;
     }
 
-    await refreshAdmin();
+    if (
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      showNotice(
+        'Введите правильную цену.'
+      );
 
-  } catch (error) {
-    console.error(error);
-
-    showNotice('Не удалось изменить товар.');
-  }
-};
-
-window.deleteProduct = async function(id) {
-  if (!isOwner) return;
-
-  const confirmed =
-    confirm('Удалить этот товар из ZAFAYHA?');
-
-  if (!confirmed) return;
-
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
-      {
-        method: 'DELETE',
-        headers
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(await response.text());
+      return;
     }
 
-    cart = cart.filter(
-      item => String(item.id) !== String(id)
-    );
+    if (
+      !Number.isFinite(stock) ||
+      stock < 0
+    ) {
+      showNotice(
+        'Введите количество товара.'
+      );
 
-    saveCart();
+      return;
+    }
 
-    await refreshAdmin();
+    if (!newProductImageFile) {
+      showNotice(
+        'Выберите фото товара.'
+      );
 
-  } catch (error) {
-    console.error(error);
+      return;
+    }
 
-    showNotice('Не удалось удалить товар.');
-  }
-};
+    const button =
+      document.querySelector(
+        '#createProductButton'
+      );
+
+    productSaving = true;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent =
+        'Загружаем фото...';
+    }
+
+    try {
+      const image_url =
+        await uploadProductImage(
+          newProductImageFile
+        );
+
+      if (button) {
+        button.textContent =
+          'Сохраняем товар...';
+      }
+
+      const response =
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/products`,
+          {
+            method: 'POST',
+
+            headers: {
+              ...headers,
+              Prefer:
+                'return=representation'
+            },
+
+            body:
+              JSON.stringify({
+                name,
+                color,
+                price,
+                stock,
+                image_url,
+                active: true
+              })
+          }
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          await response.text()
+        );
+      }
+
+      newProductImageFile = null;
+
+      showNotice(
+        'Товар добавлен в ZAFAYHA.'
+      );
+
+      await refreshAdmin();
+
+    } catch (error) {
+      console.error(
+        'Create product error:',
+        error
+      );
+
+      showNotice(
+        error.message ||
+        'Не удалось добавить товар.'
+      );
+
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          'Добавить товар';
+      }
+
+    } finally {
+      productSaving = false;
+    }
+  };
+
+/* =========================
+   EDIT PRODUCT
+========================= */
+
+window.editProduct =
+  function(id) {
+    if (!isOwner) return;
+
+    const product =
+      getProduct(id);
+
+    if (!product) return;
+
+    editProductImageFile = null;
+
+    setActiveNav(null);
+
+    app.innerHTML =
+      hero(
+        'Изменить товар',
+        'Обновите данные или фотографию.'
+      ) +
+      `
+        <section class="panel">
+
+          ${
+            product.image_url
+              ? `
+                <div
+                  style="
+                    margin-bottom: 18px;
+                    overflow: hidden;
+                    border-radius: 22px;
+                  "
+                >
+                  <img
+                    src="${escapeHtml(product.image_url)}"
+                    alt="${escapeHtml(product.name)}"
+                    style="
+                      display: block;
+                      width: 100%;
+                      aspect-ratio: 4 / 5;
+                      object-fit: cover;
+                    "
+                  >
+                </div>
+              `
+              : ''
+          }
+
+          <label>Название</label>
+
+          <input
+            id="editName"
+            value="${escapeHtml(product.name || '')}"
+            placeholder="Название"
+          >
+
+          <label>Цвет</label>
+
+          <input
+            id="editColor"
+            value="${escapeHtml(product.color || '')}"
+            placeholder="Цвет"
+          >
+
+          <label>Цена</label>
+
+          <input
+            id="editPrice"
+            type="number"
+            value="${Number(product.price || 0)}"
+            placeholder="Цена"
+          >
+
+          <label>Количество</label>
+
+          <input
+            id="editStock"
+            type="number"
+            value="${Number(product.stock || 0)}"
+            placeholder="Количество"
+          >
+
+          <label
+            style="
+              display: block;
+              margin-top: 16px;
+            "
+          >
+            Фотография
+          </label>
+
+          <label
+            class="upload-button"
+            style="
+              display: block;
+              text-align: center;
+              margin-top: 8px;
+              cursor: pointer;
+            "
+          >
+            Выбрать новое фото
+
+            <input
+              id="editImageFile"
+              type="file"
+              accept="image/*"
+              hidden
+              onchange="selectEditProductImage(event)"
+            >
+
+          </label>
+
+          <div
+            id="editProductImagePreview"
+          ></div>
+
+          <button
+            id="saveProductButton"
+            class="primary-button"
+            onclick="saveProduct('${product.id}')"
+            style="
+              margin-top: 18px;
+            "
+          >
+            Сохранить изменения
+          </button>
+
+          <button onclick="admin()">
+            Отмена
+          </button>
+
+        </section>
+      `;
+  };
+
+/* =========================
+   SAVE PRODUCT
+========================= */
+
+window.saveProduct =
+  async function(id) {
+    if (
+      !isOwner ||
+      productSaving
+    ) {
+      return;
+    }
+
+    const product =
+      getProduct(id);
+
+    if (!product) return;
+
+    const name =
+      document
+        .querySelector('#editName')
+        ?.value
+        .trim();
+
+    const color =
+      document
+        .querySelector('#editColor')
+        ?.value
+        .trim() || '';
+
+    const price =
+      Number(
+        document
+          .querySelector('#editPrice')
+          ?.value
+      );
+
+    const stock =
+      Number(
+        document
+          .querySelector('#editStock')
+          ?.value
+      );
+
+    if (!name) {
+      showNotice(
+        'Введите название.'
+      );
+
+      return;
+    }
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      showNotice(
+        'Введите правильную цену.'
+      );
+
+      return;
+    }
+
+    if (
+      !Number.isFinite(stock) ||
+      stock < 0
+    ) {
+      showNotice(
+        'Введите количество товара.'
+      );
+
+      return;
+    }
+
+    const button =
+      document.querySelector(
+        '#saveProductButton'
+      );
+
+    productSaving = true;
+
+    if (button) {
+      button.disabled = true;
+
+      button.textContent =
+        editProductImageFile
+          ? 'Загружаем фото...'
+          : 'Сохраняем...';
+    }
+
+    try {
+      let image_url =
+        product.image_url || null;
+
+      if (editProductImageFile) {
+        image_url =
+          await uploadProductImage(
+            editProductImageFile
+          );
+      }
+
+      if (button) {
+        button.textContent =
+          'Сохраняем...';
+      }
+
+      const response =
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
+          {
+            method: 'PATCH',
+
+            headers,
+
+            body:
+              JSON.stringify({
+                name,
+                color,
+                price,
+                stock,
+                image_url
+              })
+          }
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          await response.text()
+        );
+      }
+
+      editProductImageFile = null;
+
+      showNotice(
+        'Товар обновлён.'
+      );
+
+      await refreshAdmin();
+
+    } catch (error) {
+      console.error(
+        'Save product error:',
+        error
+      );
+
+      showNotice(
+        error.message ||
+        'Не удалось изменить товар.'
+      );
+
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          'Сохранить изменения';
+      }
+
+    } finally {
+      productSaving = false;
+    }
+  };
+
+/* =========================
+   DELETE PRODUCT
+========================= */
+
+window.deleteProduct =
+  async function(id) {
+    if (!isOwner) return;
+
+    const confirmed =
+      confirm(
+        'Удалить этот товар из ZAFAYHA?'
+      );
+
+    if (!confirmed) return;
+
+    try {
+      const response =
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+            headers
+          }
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          await response.text()
+        );
+      }
+
+      cart = cart.filter(
+        item =>
+          String(item.id) !==
+          String(id)
+      );
+
+      saveCart();
+
+      await refreshAdmin();
+
+    } catch (error) {
+      console.error(error);
+
+      showNotice(
+        'Не удалось удалить товар.'
+      );
+    }
+  };
+
+/* =========================
+   REFRESH ADMIN
+========================= */
 
 async function refreshAdmin() {
   try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/products?select=*&order=created_at.desc`,
-      { headers }
-    );
+    const response =
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/products?select=*&order=created_at.desc`,
+        { headers }
+      );
 
     if (!response.ok) {
-      throw new Error(`Ошибка: ${response.status}`);
+      throw new Error(
+        `Ошибка: ${response.status}`
+      );
     }
 
-    products = await response.json();
+    products =
+      await response.json();
 
     admin();
 
   } catch (error) {
     console.error(error);
 
-    showNotice('Не удалось обновить список товаров.');
+    showNotice(
+      'Не удалось обновить список товаров.'
+    );
   }
 }
 
@@ -1302,27 +2175,30 @@ window.cartView = cartView;
 window.tryon = tryon;
 window.gift = gift;
 
-document.querySelectorAll('nav button').forEach(button => {
-  button.onclick = () => {
-    const action = button.dataset.action;
+document
+  .querySelectorAll('nav button')
+  .forEach(button => {
+    button.onclick = () => {
+      const action =
+        button.dataset.action;
 
-    if (action === 'shop') {
-      shop();
-    }
+      if (action === 'shop') {
+        shop();
+      }
 
-    if (action === 'tryon') {
-      tryon();
-    }
+      if (action === 'tryon') {
+        tryon();
+      }
 
-    if (action === 'gift') {
-      gift();
-    }
+      if (action === 'gift') {
+        gift();
+      }
 
-    if (action === 'cart') {
-      cartView();
-    }
-  };
-});
+      if (action === 'cart') {
+        cartView();
+      }
+    };
+  });
 
 /* =========================
    TELEGRAM
@@ -1334,6 +2210,5 @@ if (tg) {
 }
 
 setActiveNav('shop');
-
 updateCartBadge();
 loadProducts();
