@@ -4,7 +4,7 @@ const SUPABASE_URL = 'https://ackordxxqeccjlifzgop.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_s_ZV40KaRI6kpgiuZlVW-w_H-11lwE6';
 
 let products = [];
-let cart = [];
+let cart = JSON.parse(localStorage.getItem('zafayha_cart') || '[]');
 
 const app = document.querySelector('#app');
 const tg = window.Telegram?.WebApp;
@@ -23,14 +23,57 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
-function hero(title) {
+/* =========================
+   HELPERS
+========================= */
+
+function hero(title, subtitle = '') {
   return `
     <section class="hero">
       <div class="eyebrow">ZAFAYHA</div>
       <h1>${title}</h1>
+      ${subtitle ? `<p class="hero-subtitle">${subtitle}</p>` : ''}
     </section>
   `;
 }
+
+function saveCart() {
+  localStorage.setItem('zafayha_cart', JSON.stringify(cart));
+  updateCartBadge();
+}
+
+function cartCount() {
+  return cart.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+}
+
+function updateCartBadge() {
+  document.querySelectorAll('nav button').forEach(button => {
+    if (button.dataset.action === 'cart') {
+      button.textContent = `Корзина ${cartCount()}`;
+    }
+  });
+}
+
+function getProduct(id) {
+  return products.find(
+    p => String(p.id) === String(id)
+  );
+}
+
+function showNotice(message) {
+  if (tg?.showAlert) {
+    tg.showAlert(message);
+  } else {
+    alert(message);
+  }
+}
+
+/* =========================
+   PRODUCTS
+========================= */
 
 async function loadProducts() {
   app.innerHTML = `
@@ -51,6 +94,12 @@ async function loadProducts() {
     }
 
     products = await response.json();
+
+    cart = cart.filter(item =>
+      products.some(p => String(p.id) === String(item.id))
+    );
+
+    saveCart();
     shop();
 
   } catch (error) {
@@ -67,115 +116,544 @@ async function loadProducts() {
   }
 }
 
+/* =========================
+   SHOP
+========================= */
+
 function shop() {
   const cards = products.length
     ? products.map(p => `
         <article class="card">
 
-          ${p.image_url
-            ? `<img src="${p.image_url}" alt="${p.name || 'ZAFAYHA'}">`
-            : ''
+          ${
+            p.image_url
+              ? `
+                <div class="product-image">
+                  <img
+                    src="${p.image_url}"
+                    alt="${p.name || 'ZAFAYHA'}"
+                  >
+                </div>
+              `
+              : `
+                <div class="product-image product-placeholder">
+                  <span>ZAFAYHA</span>
+                </div>
+              `
           }
 
-          <h3>${p.name || 'ZAFAYHA'}</h3>
+          <div class="card-content">
 
-          ${p.color
-            ? `<p>${p.color}</p>`
-            : ''
-          }
+            <h3>${p.name || 'ZAFAYHA'}</h3>
 
-          <p>${Number(p.stock || 0)} шт.</p>
+            ${
+              p.color
+                ? `<p class="product-color">${p.color}</p>`
+                : ''
+            }
 
-          <strong>${money(p.price)}</strong>
+            <p class="product-stock">
+              ${Number(p.stock || 0)} шт.
+            </p>
 
-          <button onclick="addToCart('${p.id}')">
-            В корзину
-          </button>
+            <strong class="product-price">
+              ${money(p.price)}
+            </strong>
 
+            ${
+              Number(p.stock || 0) > 0
+                ? `
+                  <button
+                    class="primary-button"
+                    onclick="addToCart('${p.id}')"
+                  >
+                    В корзину
+                  </button>
+                `
+                : `
+                  <button disabled>
+                    Нет в наличии
+                  </button>
+                `
+            }
+
+          </div>
         </article>
       `).join('')
     : `
       <section class="panel">
-        <p>Коллекция скоро появится.</p>
+        <h2>Новая коллекция готовится</h2>
+        <p>Совсем скоро здесь появятся новые образы ZAFAYHA.</p>
       </section>
     `;
 
   app.innerHTML =
-    hero('Тихая элегантность.') +
+    hero(
+      'Тихая элегантность.',
+      'Коллекция, созданная для вашего образа.'
+    ) +
     `<div class="grid">${cards}</div>` +
-    (isOwner
-      ? `<button class="adminlink" onclick="admin()">Админ ZAFAYHA</button>`
-      : ''
+    (
+      isOwner
+        ? `
+          <button
+            class="adminlink"
+            onclick="admin()"
+          >
+            Управление ZAFAYHA
+          </button>
+        `
+        : ''
     );
+
+  updateCartBadge();
 }
 
+/* =========================
+   CART
+========================= */
+
 window.addToCart = function(id) {
-  cart.push(id);
+  const product = getProduct(id);
+
+  if (!product) return;
+
+  if (Number(product.stock || 0) <= 0) {
+    showNotice('Товара сейчас нет в наличии.');
+    return;
+  }
+
+  const existing = cart.find(
+    item => String(item.id) === String(id)
+  );
+
+  if (existing) {
+    if (existing.quantity >= Number(product.stock)) {
+      showNotice('Больше этого количества сейчас нет в наличии.');
+      return;
+    }
+
+    existing.quantity += 1;
+  } else {
+    cart.push({
+      id,
+      quantity: 1
+    });
+  }
+
+  saveCart();
+
+  showNotice(`${product.name} добавлен в корзину.`);
+};
+
+window.changeQuantity = function(id, change) {
+  const item = cart.find(
+    item => String(item.id) === String(id)
+  );
+
+  const product = getProduct(id);
+
+  if (!item || !product) return;
+
+  const nextQuantity = item.quantity + change;
+
+  if (nextQuantity <= 0) {
+    cart = cart.filter(
+      item => String(item.id) !== String(id)
+    );
+  } else if (nextQuantity <= Number(product.stock || 0)) {
+    item.quantity = nextQuantity;
+  } else {
+    showNotice('Больше товара сейчас нет в наличии.');
+    return;
+  }
+
+  saveCart();
+  cartView();
+};
+
+window.removeFromCart = function(id) {
+  cart = cart.filter(
+    item => String(item.id) !== String(id)
+  );
+
+  saveCart();
   cartView();
 };
 
 function cartView() {
   const rows = cart
-    .map(id => products.find(p => String(p.id) === String(id)))
-    .filter(Boolean);
+    .map(item => ({
+      ...item,
+      product: getProduct(item.id)
+    }))
+    .filter(item => item.product);
 
   const total = rows.reduce(
-    (sum, p) => sum + Number(p.price || 0),
+    (sum, item) =>
+      sum +
+      Number(item.product.price || 0) *
+      Number(item.quantity || 0),
     0
   );
 
   app.innerHTML =
-    hero('Корзина') +
+    hero(
+      'Ваша корзина.',
+      'Выбранные изделия ZAFAYHA.'
+    ) +
     `
-    <section class="panel">
+      <section class="panel cart-panel">
 
-      ${
-        rows.length
-          ? rows.map((p, index) => `
-              <p>
-                ${p.name} — ${money(p.price)}
-                <button onclick="removeFromCart(${index})">×</button>
-              </p>
-            `).join('')
-          : '<p>Корзина пуста.</p>'
-      }
+        ${
+          rows.length
+            ? rows.map(item => `
+                <div class="cart-item">
 
-      ${
-        rows.length
-          ? `<h3>Итого: ${money(total)}</h3>`
-          : ''
-      }
+                  ${
+                    item.product.image_url
+                      ? `
+                        <img
+                          src="${item.product.image_url}"
+                          alt="${item.product.name}"
+                        >
+                      `
+                      : ''
+                  }
 
-    </section>
+                  <div class="cart-info">
+
+                    <strong>
+                      ${item.product.name}
+                    </strong>
+
+                    <p>
+                      ${item.product.color || ''}
+                    </p>
+
+                    <p>
+                      ${money(item.product.price)}
+                    </p>
+
+                    <div class="quantity-controls">
+
+                      <button
+                        onclick="changeQuantity('${item.id}', -1)"
+                      >
+                        −
+                      </button>
+
+                      <span>
+                        ${item.quantity}
+                      </span>
+
+                      <button
+                        onclick="changeQuantity('${item.id}', 1)"
+                      >
+                        +
+                      </button>
+
+                    </div>
+
+                    <button
+                      class="remove-button"
+                      onclick="removeFromCart('${item.id}')"
+                    >
+                      Удалить
+                    </button>
+
+                  </div>
+
+                </div>
+              `).join('')
+            : `
+                <div class="empty-state">
+                  <h2>Корзина пуста</h2>
+                  <p>
+                    Добавьте понравившиеся изделия из коллекции.
+                  </p>
+
+                  <button onclick="shop()">
+                    Смотреть коллекцию
+                  </button>
+                </div>
+              `
+        }
+
+        ${
+          rows.length
+            ? `
+                <div class="cart-total">
+
+                  <span>Итого</span>
+
+                  <strong>
+                    ${money(total)}
+                  </strong>
+
+                </div>
+
+                <button
+                  class="checkout-button"
+                  onclick="checkout()"
+                >
+                  Оформить заказ
+                </button>
+              `
+            : ''
+        }
+
+      </section>
     `;
+
+  updateCartBadge();
 }
 
-window.removeFromCart = function(index) {
-  cart.splice(index, 1);
-  cartView();
+window.checkout = function() {
+  if (!cart.length) return;
+
+  app.innerHTML =
+    hero(
+      'Оформление заказа.',
+      'Оставьте данные для связи.'
+    ) +
+    `
+      <section class="panel checkout-panel">
+
+        <label>Ваше имя</label>
+        <input
+          id="customerName"
+          placeholder="Имя"
+        >
+
+        <label>Телефон</label>
+        <input
+          id="customerPhone"
+          type="tel"
+          placeholder="+998"
+        >
+
+        <label>Адрес доставки</label>
+        <input
+          id="customerAddress"
+          placeholder="Город, улица, дом"
+        >
+
+        <label>Комментарий</label>
+        <textarea
+          id="customerComment"
+          placeholder="Комментарий к заказу"
+        ></textarea>
+
+        <button
+          class="primary-button"
+          onclick="sendOrder()"
+        >
+          Подтвердить заказ
+        </button>
+
+        <button onclick="cartView()">
+          Вернуться в корзину
+        </button>
+
+      </section>
+    `;
 };
+
+window.sendOrder = function() {
+  const name =
+    document.querySelector('#customerName')?.value.trim();
+
+  const phone =
+    document.querySelector('#customerPhone')?.value.trim();
+
+  const address =
+    document.querySelector('#customerAddress')?.value.trim();
+
+  if (!name || !phone) {
+    showNotice('Введите имя и номер телефона.');
+    return;
+  }
+
+  if (!address) {
+    showNotice('Введите адрес доставки.');
+    return;
+  }
+
+  showNotice(
+    'Данные заполнены. Следующим этапом подключим отправку заказа администратору ZAFAYHA.'
+  );
+};
+
+/* =========================
+   TRY ON
+========================= */
 
 function tryon() {
   app.innerHTML =
-    hero('Примерьте образ.') +
+    hero(
+      'Примерьте ZAFAYHA.',
+      'Посмотрите, как образ будет смотреться на вас.'
+    ) +
     `
-    <section class="panel">
-      <h2>AI примерка</h2>
-      <p>Скоро здесь можно будет примерить образ ZAFAYHA.</p>
-    </section>
+      <section class="panel feature-panel">
+
+        <div class="feature-icon">
+          ✦
+        </div>
+
+        <h2>Виртуальная примерка</h2>
+
+        <p>
+          Выберите фотографию, а затем изделие ZAFAYHA.
+        </p>
+
+        <label class="upload-button">
+
+          Выбрать фотографию
+
+          <input
+            id="tryonPhoto"
+            type="file"
+            accept="image/*"
+            hidden
+            onchange="previewTryonPhoto(event)"
+          >
+
+        </label>
+
+        <div id="tryonPreview"></div>
+
+        <p class="feature-note">
+          AI-примерку подключим отдельным этапом.
+        </p>
+
+      </section>
     `;
 }
 
+window.previewTryonPhoto = function(event) {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function(e) {
+    const preview =
+      document.querySelector('#tryonPreview');
+
+    if (!preview) return;
+
+    preview.innerHTML = `
+      <img
+        class="tryon-preview-image"
+        src="${e.target.result}"
+        alt="Фото для примерки"
+      >
+
+      <p>
+        Фото готово для примерки.
+      </p>
+    `;
+  };
+
+  reader.readAsDataURL(file);
+};
+
+/* =========================
+   GIFT
+========================= */
+
 function gift() {
+  const options = products
+    .filter(p => Number(p.stock || 0) > 0)
+    .map(p => `
+      <option value="${p.id}">
+        ${p.name} — ${money(p.price)}
+      </option>
+    `)
+    .join('');
+
   app.innerHTML =
-    hero('Передайте тепло.') +
+    hero(
+      'Передайте тепло.',
+      'Подарок ZAFAYHA для особенного человека.'
+    ) +
     `
-    <section class="panel">
-      <h2>Подарок ZAFAYHA</h2>
-      <p>Скоро здесь можно будет оформить подарок.</p>
-    </section>
+      <section class="panel gift-panel">
+
+        <h2>Подарить ZAFAYHA</h2>
+
+        ${
+          options
+            ? `
+                <label>Выберите изделие</label>
+
+                <select id="giftProduct">
+                  ${options}
+                </select>
+
+                <label>Имя получателя</label>
+
+                <input
+                  id="giftName"
+                  placeholder="Имя"
+                >
+
+                <label>Телефон получателя</label>
+
+                <input
+                  id="giftPhone"
+                  type="tel"
+                  placeholder="+998"
+                >
+
+                <label>Ваше пожелание</label>
+
+                <textarea
+                  id="giftMessage"
+                  placeholder="Напишите несколько тёплых слов..."
+                ></textarea>
+
+                <button
+                  class="primary-button"
+                  onclick="addGiftToCart()"
+                >
+                  Добавить подарок в корзину
+                </button>
+              `
+            : `
+                <p>
+                  Сейчас нет изделий для оформления подарка.
+                </p>
+              `
+        }
+
+      </section>
     `;
 }
+
+window.addGiftToCart = function() {
+  const select =
+    document.querySelector('#giftProduct');
+
+  const name =
+    document.querySelector('#giftName')?.value.trim();
+
+  if (!select?.value) return;
+
+  if (!name) {
+    showNotice('Введите имя получателя.');
+    return;
+  }
+
+  addToCart(select.value);
+
+  setTimeout(() => {
+    cartView();
+  }, 300);
+};
 
 /* =========================
    ADMIN
@@ -188,79 +666,90 @@ function admin() {
   }
 
   app.innerHTML =
-    hero('Управление ZAFAYHA') +
+    hero(
+      'Управление ZAFAYHA',
+      'Коллекция и наличие.'
+    ) +
     `
-    <section class="panel">
+      <section class="panel">
 
-      <h2>Добавить товар</h2>
+        <h2>Добавить товар</h2>
 
-      <input
-        id="productName"
-        placeholder="Название"
-      >
+        <input
+          id="productName"
+          placeholder="Название"
+        >
 
-      <input
-        id="productColor"
-        placeholder="Цвет"
-      >
+        <input
+          id="productColor"
+          placeholder="Цвет"
+        >
 
-      <input
-        id="productPrice"
-        type="number"
-        placeholder="Цена"
-      >
+        <input
+          id="productPrice"
+          type="number"
+          placeholder="Цена"
+        >
 
-      <input
-        id="productStock"
-        type="number"
-        placeholder="Количество"
-      >
+        <input
+          id="productStock"
+          type="number"
+          placeholder="Количество"
+        >
 
-      <input
-        id="productImage"
-        placeholder="Ссылка на фото"
-      >
+        <input
+          id="productImage"
+          placeholder="Ссылка на фото"
+        >
 
-      <button onclick="createProduct()">
-        Добавить товар
-      </button>
+        <button
+          class="primary-button"
+          onclick="createProduct()"
+        >
+          Добавить товар
+        </button>
 
-    </section>
+      </section>
 
-    <section class="panel">
-      <h2>Товары</h2>
+      <section class="panel">
 
-      ${
-        products.length
-          ? products.map(p => `
-              <div class="admin-product">
+        <h2>Товары</h2>
 
-                <strong>${p.name}</strong>
+        ${
+          products.length
+            ? products.map(p => `
+                <div class="admin-product">
 
-                <p>
-                  ${p.color || ''}
-                  · ${Number(p.stock || 0)} шт.
-                  · ${money(p.price)}
-                </p>
+                  <strong>${p.name}</strong>
 
-                <button onclick="editProduct('${p.id}')">
-                  Изменить
-                </button>
+                  <p>
+                    ${p.color || ''}
+                    · ${Number(p.stock || 0)} шт.
+                    · ${money(p.price)}
+                  </p>
 
-                <button onclick="deleteProduct('${p.id}')">
-                  Удалить
-                </button>
+                  <button
+                    onclick="editProduct('${p.id}')"
+                  >
+                    Изменить
+                  </button>
 
-              </div>
-            `).join('')
-          : '<p>Товаров пока нет.</p>'
-      }
+                  <button
+                    onclick="deleteProduct('${p.id}')"
+                  >
+                    Удалить
+                  </button>
 
-      <button onclick="shop()">
-        Вернуться в магазин
-      </button>
+                </div>
+              `).join('')
+            : '<p>Товаров пока нет.</p>'
+        }
 
-    </section>
+        <button onclick="shop()">
+          Вернуться в магазин
+        </button>
+
+      </section>
     `;
 }
 
@@ -269,19 +758,28 @@ window.admin = admin;
 window.createProduct = async function() {
   if (!isOwner) return;
 
-  const name = document.querySelector('#productName').value.trim();
-  const color = document.querySelector('#productColor').value.trim();
-  const price = Number(document.querySelector('#productPrice').value);
-  const stock = Number(document.querySelector('#productStock').value);
-  const image_url = document.querySelector('#productImage').value.trim();
+  const name =
+    document.querySelector('#productName').value.trim();
+
+  const color =
+    document.querySelector('#productColor').value.trim();
+
+  const price =
+    Number(document.querySelector('#productPrice').value);
+
+  const stock =
+    Number(document.querySelector('#productStock').value);
+
+  const image_url =
+    document.querySelector('#productImage').value.trim();
 
   if (!name) {
-    alert('Введите название товара.');
+    showNotice('Введите название товара.');
     return;
   }
 
   if (!price || price < 0) {
-    alert('Введите цену.');
+    showNotice('Введите цену.');
     return;
   }
 
@@ -290,10 +788,12 @@ window.createProduct = async function() {
       `${SUPABASE_URL}/rest/v1/products`,
       {
         method: 'POST',
+
         headers: {
           ...headers,
           Prefer: 'return=representation'
         },
+
         body: JSON.stringify({
           name,
           color,
@@ -306,87 +806,96 @@ window.createProduct = async function() {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText);
+      throw new Error(await response.text());
     }
 
     await refreshAdmin();
 
   } catch (error) {
     console.error(error);
-    alert('Не удалось добавить товар.');
+    showNotice('Не удалось добавить товар.');
   }
 };
 
 window.editProduct = function(id) {
   if (!isOwner) return;
 
-  const product = products.find(
-    p => String(p.id) === String(id)
-  );
+  const product = getProduct(id);
 
   if (!product) return;
 
   app.innerHTML =
     hero('Изменить товар') +
     `
-    <section class="panel">
+      <section class="panel">
 
-      <input
-        id="editName"
-        value="${product.name || ''}"
-        placeholder="Название"
-      >
+        <input
+          id="editName"
+          value="${product.name || ''}"
+          placeholder="Название"
+        >
 
-      <input
-        id="editColor"
-        value="${product.color || ''}"
-        placeholder="Цвет"
-      >
+        <input
+          id="editColor"
+          value="${product.color || ''}"
+          placeholder="Цвет"
+        >
 
-      <input
-        id="editPrice"
-        type="number"
-        value="${Number(product.price || 0)}"
-        placeholder="Цена"
-      >
+        <input
+          id="editPrice"
+          type="number"
+          value="${Number(product.price || 0)}"
+          placeholder="Цена"
+        >
 
-      <input
-        id="editStock"
-        type="number"
-        value="${Number(product.stock || 0)}"
-        placeholder="Количество"
-      >
+        <input
+          id="editStock"
+          type="number"
+          value="${Number(product.stock || 0)}"
+          placeholder="Количество"
+        >
 
-      <input
-        id="editImage"
-        value="${product.image_url || ''}"
-        placeholder="Ссылка на фото"
-      >
+        <input
+          id="editImage"
+          value="${product.image_url || ''}"
+          placeholder="Ссылка на фото"
+        >
 
-      <button onclick="saveProduct('${product.id}')">
-        Сохранить изменения
-      </button>
+        <button
+          class="primary-button"
+          onclick="saveProduct('${product.id}')"
+        >
+          Сохранить изменения
+        </button>
 
-      <button onclick="admin()">
-        Отмена
-      </button>
+        <button onclick="admin()">
+          Отмена
+        </button>
 
-    </section>
+      </section>
     `;
 };
 
 window.saveProduct = async function(id) {
   if (!isOwner) return;
 
-  const name = document.querySelector('#editName').value.trim();
-  const color = document.querySelector('#editColor').value.trim();
-  const price = Number(document.querySelector('#editPrice').value);
-  const stock = Number(document.querySelector('#editStock').value);
-  const image_url = document.querySelector('#editImage').value.trim();
+  const name =
+    document.querySelector('#editName').value.trim();
+
+  const color =
+    document.querySelector('#editColor').value.trim();
+
+  const price =
+    Number(document.querySelector('#editPrice').value);
+
+  const stock =
+    Number(document.querySelector('#editStock').value);
+
+  const image_url =
+    document.querySelector('#editImage').value.trim();
 
   if (!name) {
-    alert('Введите название.');
+    showNotice('Введите название.');
     return;
   }
 
@@ -395,7 +904,9 @@ window.saveProduct = async function(id) {
       `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
       {
         method: 'PATCH',
+
         headers,
+
         body: JSON.stringify({
           name,
           color,
@@ -407,24 +918,22 @@ window.saveProduct = async function(id) {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText);
+      throw new Error(await response.text());
     }
 
     await refreshAdmin();
 
   } catch (error) {
     console.error(error);
-    alert('Не удалось изменить товар.');
+    showNotice('Не удалось изменить товар.');
   }
 };
 
 window.deleteProduct = async function(id) {
   if (!isOwner) return;
 
-  const confirmed = confirm(
-    'Удалить этот товар из ZAFAYHA?'
-  );
+  const confirmed =
+    confirm('Удалить этот товар из ZAFAYHA?');
 
   if (!confirmed) return;
 
@@ -438,15 +947,20 @@ window.deleteProduct = async function(id) {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText);
+      throw new Error(await response.text());
     }
+
+    cart = cart.filter(
+      item => String(item.id) !== String(id)
+    );
+
+    saveCart();
 
     await refreshAdmin();
 
   } catch (error) {
     console.error(error);
-    alert('Не удалось удалить товар.');
+    showNotice('Не удалось удалить товар.');
   }
 };
 
@@ -462,20 +976,24 @@ async function refreshAdmin() {
     }
 
     products = await response.json();
+
     admin();
 
   } catch (error) {
     console.error(error);
-    alert('Не удалось обновить список товаров.');
+    showNotice('Не удалось обновить список товаров.');
   }
 }
-
-window.loadProducts = loadProducts;
-window.shop = shop;
 
 /* =========================
    NAVIGATION
 ========================= */
+
+window.loadProducts = loadProducts;
+window.shop = shop;
+window.cartView = cartView;
+window.tryon = tryon;
+window.gift = gift;
 
 document.querySelectorAll('nav button').forEach(button => {
   button.onclick = () => {
@@ -493,4 +1011,5 @@ if (tg) {
   tg.expand();
 }
 
+updateCartBadge();
 loadProducts();
