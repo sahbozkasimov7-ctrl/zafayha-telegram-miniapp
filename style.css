@@ -1,2 +1,580 @@
-*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Inter,Arial;background:#f5f5f7;color:#1d1d1f}main{max-width:720px;margin:auto;padding:22px 18px 100px}.hero{padding:26px 0 18px}.eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#777}.hero h1{font-size:42px;line-height:1;margin:8px 0}.hero p{color:#6e6e73}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card,.panel{background:#fff;border-radius:22px;padding:12px;box-shadow:0 1px 0 #00000008}.card img{width:100%;aspect-ratio:1/1.15;object-fit:cover;border-radius:16px;background:#eee}.price{font-weight:700}.btn{border:0;background:#1d1d1f;color:#fff;padding:13px 16px;border-radius:14px;width:100%;font-weight:600}.secondary{background:#eee;color:#111}.field{width:100%;border:1px solid #ddd;background:#fff;border-radius:14px;padding:14px;margin:6px 0 10px;font-size:16px}nav{position:fixed;bottom:0;left:0;right:0;background:#ffffffed;backdrop-filter:blur(20px);display:flex;justify-content:center;gap:4px;padding:10px 8px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #ddd}nav button{border:0;background:transparent;padding:10px;font-size:12px}.notice{background:#fff7df;border-radius:16px;padding:14px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.muted{color:#777;font-size:14px}h2{font-size:28px}input[type=file]{width:100%;margin:12px 0}.admin{margin-top:20px;font-size:12px;color:#888;text-align:center}
-.meta{font-size:12px;color:#777;margin:-6px 0 10px}.adminLink{display:block;margin:22px auto 0;border:0;background:transparent;color:#666;padding:12px}.ownerBadge{display:inline-block;background:#f2f2f2;border-radius:999px;padding:8px 11px;font-size:12px;margin-bottom:12px}.productAdmin{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:14px 0;border-bottom:1px solid #eee}.adminActions{display:flex;gap:6px}.adminActions button{border:0;border-radius:10px;padding:8px}.panel h2{font-size:20px;margin-top:12px}
+/* =========================
+   ZAFAYHA — BURGUNDY EDITION
+   ========================= */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --burgundy: #6f172d;
+  --burgundy-dark: #48101f;
+  --burgundy-soft: #8c3d50;
+  --cream: #f7f1e8;
+  --paper: #fffaf4;
+  --white: #ffffff;
+  --ink: #241b1c;
+  --muted: #796d6e;
+  --line: rgba(111, 23, 45, 0.12);
+}
+
+html {
+  background: var(--cream);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(111, 23, 45, 0.10),
+      transparent 34%
+    ),
+    var(--cream);
+
+  color: var(--ink);
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    Arial,
+    sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* =========================
+   MAIN APP
+   ========================= */
+
+#app {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+
+  padding:
+    22px
+    16px
+    125px;
+}
+
+/* =========================
+   HERO
+   ========================= */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+
+  margin-bottom: 22px;
+  padding: 32px 24px 28px;
+
+  border-radius: 30px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #4a1020 0%,
+      #70172e 52%,
+      #913f50 100%
+    );
+
+  color: #fffaf4;
+
+  box-shadow:
+    0 18px 45px rgba(75, 16, 32, 0.20);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+
+  width: 190px;
+  height: 190px;
+
+  right: -70px;
+  top: -85px;
+
+  border-radius: 50%;
+
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.hero::before {
+  content: "Z";
+  position: absolute;
+
+  right: 17px;
+  bottom: -55px;
+
+  font-family: Georgia, serif;
+  font-size: 180px;
+  line-height: 1;
+
+  color: rgba(255,255,255,.045);
+}
+
+.eyebrow {
+  position: relative;
+  z-index: 1;
+
+  margin-bottom: 12px;
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 5px;
+
+  text-transform: uppercase;
+
+  color: rgba(255, 250, 244, .75);
+}
+
+.hero h1 {
+  position: relative;
+  z-index: 1;
+
+  max-width: 500px;
+
+  margin: 0;
+
+  font-family:
+    Georgia,
+    "Times New Roman",
+    serif;
+
+  font-size: clamp(35px, 8vw, 62px);
+  line-height: .94;
+  letter-spacing: -2px;
+  font-weight: 500;
+}
+
+/* =========================
+   PRODUCTS GRID
+   ========================= */
+
+.grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+/* =========================
+   PRODUCT CARD
+   ========================= */
+
+.card {
+  min-width: 0;
+  overflow: hidden;
+
+  padding: 0 0 14px;
+
+  border-radius: 24px;
+
+  background: rgba(255, 250, 244, .94);
+
+  border:
+    1px solid
+    rgba(111, 23, 45, .08);
+
+  box-shadow:
+    0 10px 30px
+    rgba(60, 31, 35, .07);
+}
+
+.card img {
+  display: block;
+
+  width: 100%;
+  height: 230px;
+
+  object-fit: cover;
+
+  margin: 0 0 15px;
+
+  background: #eadfd7;
+}
+
+.card h3,
+.card p,
+.card strong,
+.card > button {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+
+.card h3 {
+  margin-top: 0;
+  margin-bottom: 7px;
+
+  font-family:
+    Georgia,
+    "Times New Roman",
+    serif;
+
+  font-size: 21px;
+  line-height: 1.1;
+
+  font-weight: 500;
+
+  color: var(--ink);
+}
+
+.card p {
+  margin-top: 4px;
+  margin-bottom: 4px;
+
+  color: var(--muted);
+
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.card strong {
+  display: block;
+
+  margin-top: 10px;
+  margin-bottom: 12px;
+
+  font-size: 16px;
+
+  color: var(--burgundy);
+}
+
+.card > button {
+  width: calc(100% - 28px);
+
+  border: 0;
+
+  padding: 11px 10px;
+
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--burgundy-dark),
+      var(--burgundy)
+    );
+
+  color: #fff;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  box-shadow:
+    0 8px 20px
+    rgba(111, 23, 45, .16);
+}
+
+.card > button:active {
+  transform: scale(.97);
+}
+
+/* =========================
+   PANELS
+   ========================= */
+
+.panel {
+  margin-bottom: 16px;
+
+  padding: 20px;
+
+  border-radius: 25px;
+
+  background:
+    rgba(255, 250, 244, .95);
+
+  border:
+    1px solid
+    rgba(111, 23, 45, .09);
+
+  box-shadow:
+    0 12px 35px
+    rgba(60, 31, 35, .07);
+}
+
+.panel h2 {
+  margin: 0 0 16px;
+
+  font-family:
+    Georgia,
+    "Times New Roman",
+    serif;
+
+  font-size: 27px;
+  font-weight: 500;
+
+  color: var(--burgundy-dark);
+}
+
+.panel h3 {
+  color: var(--burgundy);
+}
+
+/* =========================
+   INPUTS
+   ========================= */
+
+input {
+  width: 100%;
+
+  margin-bottom: 9px;
+
+  padding: 13px 14px;
+
+  border-radius: 14px;
+
+  border:
+    1px solid
+    rgba(111, 23, 45, .16);
+
+  outline: none;
+
+  background: #fff;
+
+  color: var(--ink);
+}
+
+input:focus {
+  border-color: var(--burgundy);
+
+  box-shadow:
+    0 0 0 3px
+    rgba(111, 23, 45, .08);
+}
+
+/* =========================
+   NORMAL BUTTONS
+   ========================= */
+
+.panel button,
+.adminlink {
+  border: 0;
+
+  padding: 11px 15px;
+
+  border-radius: 13px;
+
+  background: var(--burgundy);
+
+  color: #fff;
+
+  font-weight: 700;
+
+  margin: 4px 4px 4px 0;
+}
+
+.panel button:active,
+.adminlink:active {
+  transform: scale(.97);
+}
+
+/* =========================
+   ADMIN
+   ========================= */
+
+.adminlink {
+  display: block;
+
+  width: fit-content;
+
+  margin: 22px auto 0;
+
+  padding: 12px 20px;
+
+  background: transparent;
+
+  border:
+    1px solid
+    rgba(111, 23, 45, .35);
+
+  color: var(--burgundy);
+
+  box-shadow: none;
+}
+
+.admin-product {
+  padding: 15px 0;
+
+  border-bottom:
+    1px solid
+    var(--line);
+}
+
+.admin-product:last-child {
+  border-bottom: 0;
+}
+
+.admin-product strong {
+  font-family:
+    Georgia,
+    "Times New Roman",
+    serif;
+
+  font-size: 19px;
+
+  color: var(--burgundy-dark);
+}
+
+/* =========================
+   BOTTOM NAVIGATION
+   ========================= */
+
+nav {
+  position: fixed;
+
+  z-index: 999;
+
+  left: 50%;
+  bottom: 12px;
+
+  transform: translateX(-50%);
+
+  width:
+    calc(100% - 24px);
+
+  max-width: 720px;
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, 1fr);
+
+  gap: 5px;
+
+  padding: 7px;
+
+  border-radius: 24px;
+
+  background:
+    rgba(255, 250, 244, .94);
+
+  border:
+    1px solid
+    rgba(111, 23, 45, .12);
+
+  box-shadow:
+    0 16px 50px
+    rgba(64, 18, 31, .20);
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+nav button {
+  min-width: 0;
+
+  border: 0;
+
+  padding: 11px 3px;
+
+  border-radius: 17px;
+
+  background: transparent;
+
+  color: #554749;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+nav button:first-child {
+  background: var(--burgundy);
+  color: white;
+}
+
+nav button:active {
+  transform: scale(.95);
+
+  background:
+    rgba(111, 23, 45, .10);
+}
+
+/* =========================
+   CART
+   ========================= */
+
+.panel p button {
+  border-radius: 50%;
+
+  min-width: 28px;
+  height: 28px;
+
+  padding: 0;
+
+  margin-left: 6px;
+}
+
+/* =========================
+   SMALL PHONES
+   ========================= */
+
+@media (max-width: 390px) {
+
+  #app {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .hero {
+    padding:
+      28px
+      20px
+      25px;
+
+    border-radius: 26px;
+  }
+
+  .grid {
+    gap: 9px;
+  }
+
+  .card {
+    border-radius: 20px;
+  }
+
+  .card img {
+    height: 205px;
+  }
+
+  .card h3 {
+    font-size: 18px;
+  }
+
+  nav button {
+    font-size: 10px;
+  }
+}
+
+/* =========================
+   BIG SCREENS
+   ========================= */
+
+@media (min-width: 700px) {
+
+  .grid {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr));
+  }
+
+  .card img {
+    height: 290px;
+  }
+}
